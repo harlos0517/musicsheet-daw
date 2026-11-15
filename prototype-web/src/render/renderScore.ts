@@ -19,8 +19,6 @@ import {
   VoltaType,
 } from 'vexflow/bravura'
 
-import { transposeKey } from '@/core/pitch'
-import { type MeasureInfo, measureTimeline, timeVoice } from '@/core/time'
 import type MusicData from '@/core/types/MusicData'
 import type {
   Clef,
@@ -31,6 +29,8 @@ import type {
   Track,
 } from '@/core/types/MusicData'
 import { BarlineStyle, ClefType } from '@/core/types/MusicData'
+import { transposeKey } from '@/core/validation/pitch'
+import { type MeasureInfo, measureTimeline, timeVoice } from '@/core/validation/time'
 
 import {
   type BuiltStaffMeasure,

@@ -1,4 +1,4 @@
-import type MusicData from '../types/MusicData'
+import type MusicData from '@/core/types/MusicData'
 import { band } from './band'
 import { melody } from './melody'
 import { piano } from './piano'

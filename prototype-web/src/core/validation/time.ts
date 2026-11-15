@@ -1,4 +1,4 @@
-import type MusicData from './types/MusicData'
+import type MusicData from '@/core/types/MusicData'
 import type {
   Duration,
   KeySignature,
@@ -6,7 +6,7 @@ import type {
   TimeSignature,
   Tuplet,
   VoiceEvent,
-} from './types/MusicData'
+} from '@/core/types/MusicData'
 
 /** Nominal length of a duration in ticks, ignoring any enclosing tuplet. */
 export const durationTicks = (duration: Duration, tpq: number): number =>

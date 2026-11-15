@@ -1,5 +1,5 @@
-import type { Pitch } from './types/MusicData'
-import { Step } from './types/MusicData'
+import type { Pitch } from '@/core/types/MusicData'
+import { Step } from '@/core/types/MusicData'
 
 export const STEPS: Step[] = [Step.C, Step.D, Step.E, Step.F, Step.G, Step.A, Step.B]
 const STEP_SEMITONES = [0, 2, 4, 5, 7, 9, 11]

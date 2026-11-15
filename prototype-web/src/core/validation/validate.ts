@@ -1,12 +1,4 @@
-import { midiNumber } from './pitch'
-import {
-  type MeasureInfo,
-  durationTicks,
-  measureTimeline,
-  timeVoice,
-  voiceTicks,
-} from './time'
-import type MusicData from './types/MusicData'
+import type MusicData from '@/core/types/MusicData'
 import type {
   Chord,
   Duration,
@@ -19,8 +11,16 @@ import type {
   Track,
   UnpitchedNote,
   VoiceEvent,
-} from './types/MusicData'
-import { ClefType, NoteType } from './types/MusicData'
+} from '@/core/types/MusicData'
+import { ClefType, NoteType } from '@/core/types/MusicData'
+import { midiNumber } from './pitch'
+import {
+  type MeasureInfo,
+  durationTicks,
+  measureTimeline,
+  timeVoice,
+  voiceTicks,
+} from './time'
 
 export type Severity = 'error' | 'warning'
 

@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from 'react'
 
 import ScoreView from '@/components/ScoreView'
 import { examples } from '@/core/examples'
-import { validate } from '@/core/validate'
+import { validate } from '@/core/validation/validate'
 import type { RenderResult } from '@/render/renderScore'
 
 const Index = () => {

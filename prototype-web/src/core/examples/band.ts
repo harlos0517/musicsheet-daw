@@ -1,6 +1,6 @@
-import type MusicData from '../types/MusicData'
-import type { KitEntry, Measure, StaffMeasure } from '../types/MusicData'
-import { BarlineStyle } from '../types/MusicData'
+import type MusicData from '@/core/types/MusicData'
+import type { KitEntry, Measure, StaffMeasure } from '@/core/types/MusicData'
+import { BarlineStyle } from '@/core/types/MusicData'
 import { ScoreBuilder } from './build'
 
 /**

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { examples } from './examples'
-import { band } from './examples/band'
-import { melody } from './examples/melody'
-import { piano } from './examples/piano'
+import { examples } from '@/core/examples'
+import { band } from '@/core/examples/band'
+import { melody } from '@/core/examples/melody'
+import { piano } from '@/core/examples/piano'
+import type MusicData from '@/core/types/MusicData'
+import type { Chord, Note } from '@/core/types/MusicData'
+import { Step } from '@/core/types/MusicData'
 import { keyAlter, midiNumber, transposeKey, transposePitch } from './pitch'
 import { durationTicks, measureTimeline } from './time'
-import type MusicData from './types/MusicData'
-import type { Chord, Note } from './types/MusicData'
-import { Step } from './types/MusicData'
 import { validate } from './validate'
 
 const codes = (music: MusicData) => validate(music).map(p => p.code)

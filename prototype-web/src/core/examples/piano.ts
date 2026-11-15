@@ -1,5 +1,5 @@
-import type MusicData from '../types/MusicData'
-import { BarlineStyle, DynamicType } from '../types/MusicData'
+import type MusicData from '@/core/types/MusicData'
+import { BarlineStyle, DynamicType } from '@/core/types/MusicData'
 import { ScoreBuilder } from './build'
 
 /**

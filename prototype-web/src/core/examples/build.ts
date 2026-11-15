@@ -22,8 +22,8 @@ import type {
   UnpitchedNote,
   Voice,
   VoiceEvent,
-} from '../types/MusicData'
-import { ClefType, Step } from '../types/MusicData'
+} from '@/core/types/MusicData'
+import { ClefType, Step } from '@/core/types/MusicData'
 
 type BeamMode = NonNullable<Chord['beam']>
 

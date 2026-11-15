@@ -20,8 +20,6 @@ import {
   Voice as VFVoice,
 } from 'vexflow/bravura'
 
-import { STEPS, type Transposition, diatonicIndex, keyAlter, transposePitch } from '@/core/pitch'
-import { durationTicks, timeVoice } from '@/core/time'
 import type {
   Chord,
   Clef,
@@ -33,6 +31,14 @@ import type {
   VoiceEvent,
 } from '@/core/types/MusicData'
 import { ArticulationType, ClefType } from '@/core/types/MusicData'
+import {
+  STEPS,
+  type Transposition,
+  diatonicIndex,
+  keyAlter,
+  transposePitch,
+} from '@/core/validation/pitch'
+import { durationTicks, timeVoice } from '@/core/validation/time'
 
 export interface StaffMeasureContext {
   tpq: number
