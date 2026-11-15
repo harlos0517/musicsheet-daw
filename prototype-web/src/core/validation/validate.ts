@@ -258,9 +258,23 @@ export const validate = (music: MusicData): Problem[] => {
 
     if (staffMeasure.voices.length === 0) error('no-voices', path, 'measure has no voices')
 
+    const voiceIndexes = new Set<number>()
     staffMeasure.voices.forEach((voice, v) => {
       const vPath = `${path}.voices[${v}]`
       register(voice, vPath, { trackId: track.id, staffId: staff.id })
+
+      if (!isInt(voice.index) || voice.index < 0) {
+        error(
+          'invalid-voice-index', vPath,
+          `voice index must be an integer ≥ 0, got ${voice.index}`,
+        )
+      } else if (voiceIndexes.has(voice.index)) {
+        error(
+          'duplicate-voice-index', vPath,
+          `voice index ${voice.index} is used twice in this measure`,
+        )
+      }
+      voiceIndexes.add(voice.index)
 
       const length = voiceTicks(voice.events, tpq)
       if (length !== lengthTicks) {
@@ -529,15 +543,23 @@ export const validate = (music: MusicData): Problem[] => {
   music.tracks.forEach((track, t) => {
     const tPath = `tracks[${t}]`
     const staffIds = new Set(track.staves.map(s => s.id))
-    const voiceIds = new Set(
-      track.staves.flatMap(s => s.measures.flatMap(m => m.voices.map(v => v.id))),
+    /** Voice indexes used anywhere on the given staves (default: all staves of the track). */
+    const voiceIndexesOn = (ids: string[] | undefined) => new Set(
+      track.staves
+        .filter(s => !ids || ids.includes(s.id))
+        .flatMap(s => s.measures.flatMap(m => m.voices.map(v => v.index))),
     )
     const checkStaffIds = (ids: string[] | undefined, path: string) => ids?.forEach(id => {
       if (!staffIds.has(id)) error('unknown-staff', path, `staff "${id}" is not part of this track`)
     })
-    const checkVoiceIds = (ids: string[] | undefined, path: string) => ids?.forEach(id => {
-      if (!voiceIds.has(id)) error('unknown-voice', path, `voice "${id}" is not part of this track`)
-    })
+    const checkVoiceIndexes = (
+      indexes: number[] | undefined, onStaffIds: string[] | undefined, path: string,
+    ) => {
+      if (!indexes) return
+      const known = voiceIndexesOn(onStaffIds)
+      for (const index of indexes)
+        if (!known.has(index)) error('unknown-voice', path, `no voice has index ${index} here`)
+    }
 
     track.trackSpanners.forEach((spanner, i) => {
       const path = `${tPath}.trackSpanners[${i}]`
@@ -555,7 +577,7 @@ export const validate = (music: MusicData): Problem[] => {
           break
         case 'custom-spanner':
           checkStaffIds(spanner.staffIds, path)
-          checkVoiceIds(spanner.voiceIds, path)
+          checkVoiceIndexes(spanner.voiceIndexes, spanner.staffIds, path)
           checkPasses(spanner.passes, `${path}.passes`)
           checkTechniqueId(spanner.techniqueId, `${path}.techniqueId`)
           break
@@ -575,7 +597,7 @@ export const validate = (music: MusicData): Problem[] => {
       register(attachment, path, { trackId: track.id })
       resolveAnchor(attachment.at, `${path}.at`, track.id)
       checkStaffIds(attachment.staffIds, path)
-      checkVoiceIds(attachment.voiceIds, path)
+      checkVoiceIndexes(attachment.voiceIndex, attachment.staffIds, path)
       if (attachment.kind === 'technique') {
         checkPasses(attachment.passes, `${path}.passes`)
         checkTechniqueId(attachment.techniqueId, `${path}.techniqueId`)

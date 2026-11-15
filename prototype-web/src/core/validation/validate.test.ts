@@ -135,6 +135,16 @@ describe('validate', () => {
     expect(codes(music)).toEqual(expect.arrayContaining(['unknown-kit-entry', 'unknown-staff']))
   })
 
+  it('reports duplicate voice indexes and filters naming a missing voice', () => {
+    const music = piano()
+    music.tracks[0]!.attachments[0]!.voiceIndex = [1]
+    expect(codes(music)).toEqual([])
+    music.tracks[0]!.attachments[0]!.staffIds = ['pno-lh'] // the left hand has one voice
+    expect(codes(music)).toContain('unknown-voice')
+    music.tracks[0]!.staves[0]!.measures[0]!.voices[1]!.index = 0
+    expect(codes(music)).toContain('duplicate-voice-index')
+  })
+
   it('reports jumps to the wrong kind of marker', () => {
     const music = band()
     const jump = music.measures[5]!.jumps[0]!

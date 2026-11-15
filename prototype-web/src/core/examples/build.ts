@@ -151,8 +151,9 @@ export class ScoreBuilder {
     })
   }
 
+  /** The index is set by `staffMeasure`, from the voice's position in the measure. */
   voice(...parts: (VoiceEvent | VoiceEvent[])[]): Voice {
-    return { id: this.id('v'), kind: 'voice', events: parts.flat() }
+    return { id: this.id('v'), kind: 'voice', index: 0, events: parts.flat() }
   }
 
   clef(type: ClefType, line: number, octaveChange = 0): Clef {
@@ -168,7 +169,13 @@ export class ScoreBuilder {
     voices: Voice[],
     clefs: { tick: number, clef: Clef }[] = [],
   ): StaffMeasure {
-    return { id: this.id('sm'), kind: 'staff-measure', measureId, clefs, voices }
+    return {
+      id: this.id('sm'),
+      kind: 'staff-measure',
+      measureId,
+      clefs,
+      voices: voices.map((voice, index) => ({ ...voice, index })),
+    }
   }
 
   timeSig(beats: number, unit: number): TimeSignature {

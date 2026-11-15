@@ -102,6 +102,7 @@ export interface StaffMeasure extends MusicDataNode {
 
 export interface Voice extends MusicDataNode {
   kind: 'voice'
+  index: number
   events: VoiceEvent[]
 }
 
@@ -263,7 +264,7 @@ export interface Pedal extends MusicDataNode {
 export interface CustomSpanner extends MusicDataNode {
   kind: 'custom-spanner'
   staffIds?: string[] // default: all staves of the track
-  voiceIds?: string[] // default: all voices
+  voiceIndexes?: number[] // default: all voices
   start: ElementAnchor | TickAnchor
   end: ElementAnchor | TickAnchor
   includeEnd?: boolean // default: false
@@ -290,7 +291,7 @@ export type GlobalSpanner = Volta | TempoChange
 
 interface AttachmentBase extends MusicDataNode {
   staffIds?: string[] // default: all staves of the track
-  voiceIds?: string[] // default: all voices
+  voiceIndex?: number[] // default: all voices
   beforeTick?: boolean // default: false
   // placed at the end of the previous event (e.g. the dynamic where a hairpin ends),
   // not on the chord at this tick.
