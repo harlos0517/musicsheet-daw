@@ -34,6 +34,21 @@ const trackChunk = (events: { tick: number, bytes: number[] }[]): number[] => {
   return chunk('MTrk', data)
 }
 
+/**
+ * Time signature that matches how long a measure really is. A pickup or any other
+ * measure with its own length gets a signature of that length (two eighths in 4/4
+ * become 1/4), so the barlines in a DAW fall where they do in the score.
+ */
+const soundingTimeSignature = (measure: PlayedMeasure, tpq: number) => {
+  const { timeSig, lengthTicks } = measure.info
+  if (lengthTicks === timeSig.beats * tpq * 4 / timeSig.unit) return timeSig
+  for (let unit = 1; unit <= 64; unit *= 2) {
+    const beats = lengthTicks * unit / (tpq * 4)
+    if (Number.isInteger(beats) && beats >= 1 && beats <= 255) return { beats, unit }
+  }
+  return timeSig
+}
+
 const STATUS = { 'note-off': 0x80, 'note-on': 0x90, 'cc': 0xb0 }
 
 /**
@@ -53,7 +68,7 @@ export const writeMidiFile = (
   ]
   let signature = ''
   for (const measure of played) {
-    const { beats, unit } = measure.info.timeSig
+    const { beats, unit } = soundingTimeSignature(measure, tpq)
     if (signature === `${beats}/${unit}`) continue
     signature = `${beats}/${unit}`
     conductor.push({
