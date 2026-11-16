@@ -215,6 +215,8 @@ const buildNotes = (ctx: TrackContext, curves: CurveEvent[]): NoteEvent[] => {
     track.kit?.find(entry => entry.id === note.kitEntryId)?.sound ?? note.kitEntryId
 
   const notes: NoteEvent[] = []
+  /** Where grace notes begin ahead of a beat, per voice. */
+  const earlyGraces: { staffId: string, voiceIndex: number, startTick: number, beat: number }[] = []
 
   const finish = (event: NoteEvent, context: NoteContext) => {
     const fullTicks = event.durationTicks
@@ -306,6 +308,7 @@ const buildNotes = (ctx: TrackContext, curves: CurveEvent[]): NoteEvent[] => {
       }
       const mainStart = onBeat ? beat + graceTotal : beat
       let graceStart = onBeat ? beat : beat - graceTotal
+      if (!onBeat && graceTotal > 0) earlyGraces.push({ ...scope, startTick: graceStart, beat })
       graces?.chords.forEach((graceChord, i) => {
         for (const note of graceChord.notes) {
           finish({
@@ -340,6 +343,17 @@ const buildNotes = (ctx: TrackContext, curves: CurveEvent[]): NoteEvent[] => {
       }
     }
   })
+
+  // Grace notes before the beat take their time from the note before them: in the same
+  // voice, whatever is still sounding when they begin ends there.
+  for (const grace of earlyGraces) {
+    for (const note of notes) {
+      if (note.staffId !== grace.staffId || note.voiceIndex !== grace.voiceIndex) continue
+      const end = note.startTick + note.durationTicks
+      if (note.startTick < grace.startTick && end > grace.startTick && end <= grace.beat)
+        note.durationTicks = grace.startTick - note.startTick
+    }
+  }
 
   return notes.sort((a, b) => a.startTick - b.startTick)
 }
