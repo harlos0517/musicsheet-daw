@@ -1,12 +1,12 @@
 export interface MusicEventBase {
   kind: string
-  id: string // ${sourceId}@${pass}#${segment}
+  id: string // ${sourceId}@${pass}#${segmentIndex}
   sourceIds: string[] // notes or elements it came from (could be several)
   trackId: string
 }
 
-export interface MusicNoteEvent extends MusicEventBase {
-  kind: 'music-note-event'
+export interface NoteEvent extends MusicEventBase {
+  kind: 'note-event'
   staffId: string
   voiceIndex: number
   pass: number
@@ -20,30 +20,37 @@ export interface MusicNoteEvent extends MusicEventBase {
   slur?: SlurPosition
 }
 
-export interface MusicCurveEvent extends MusicEventBase {
-  // overlapping curve for the same curveFor shouldn't be legal;
+export interface CurveEvent extends MusicEventBase {
+  // overlapping curve for the same parameter shouldn't be legal;
   // if that ever happens, the latter wins.
   // value holds between curve segments.
-  kind: 'music-curve-event'
-  segment: number
-  curveFor: CurveFor
+  kind: 'curve-event'
+  pass: number
+  segmentIndex: number
+  parameter: CurveParameter
   // curve could be tied to a technique group with continuous values
-  applies?: { staffId: string, voiceIndex: number }[]
-  tick: number
+  appliesTo?: { staffId: string, voiceIndex?: number }[]
+  combine?: 'add' | 'replace' // defaults to replace
+  startTick: number
   durationTicks: number
   fromValue: number // 0 ~ 1
   toValue: number // 0 ~ 1
   curveType?: CurveType // when duration is 0, this is ignored and 'hold' is used
-  a?: number // how intense the curve is
+  steepness?: number // how intense the curve is
 }
 
 export type CurveType = 'hold' | 'linear' | 'exp' | 'power' | 'ease'
 // hold: holds start value and change instantly at end
+// the meaning of steepness (k) for each curvetype:
+// hold/linear: no effect
+// exp: (e^(kt) − 1) / (e^k − 1)
+// power: k > 0: t^(1+k); k < 0: 1 − (1−t)^(1−k)
+// ease: the power curve on each half, mirrored at the middle
 
-export type MusicEvent = MusicNoteEvent | MusicCurveEvent
+export type MusicEvent = NoteEvent | CurveEvent
 
 export type SlurPosition = 'first' | 'inner' | 'last'
 
-export type CurveFor =
-  | 'dynamics' | 'sustain' | 'sostenuto' | 'soft'
-  | { type: 'custom', name: string }
+export type CurveParameter =
+  | 'dynamics' | 'sustain' | 'sostenuto' | 'una-corda'
+  | { kind: 'custom', name: string }
