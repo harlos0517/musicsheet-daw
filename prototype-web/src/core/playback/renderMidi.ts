@@ -1,6 +1,6 @@
 import type InstrumentProfile from '@/core/types/InstrumentProfile'
 import type {
-    NoteMatch, OutputRange, TechniqueMapping,
+  NoteMatch, OutputRange, TechniqueMapping,
 } from '@/core/types/InstrumentProfile'
 import type { CurveEvent, MusicEvent, NoteEvent } from '@/core/types/MusicEvent'
 import type { TechniqueDefinition } from '../types/PlaybackSetup'

@@ -3,10 +3,10 @@ import type InterpretationProfile from '@/core/types/InterpretationProfile'
 import type { NoteRule, NoteRuleAction } from '@/core/types/InterpretationProfile'
 import type MusicData from '@/core/types/MusicData'
 import type {
-    ArticulationType, Chord, Note, Track, UnpitchedNote,
+  ArticulationType, Chord, Note, Track, UnpitchedNote,
 } from '@/core/types/MusicData'
 import type {
-    CurveEvent, MusicEvent, NoteEvent, SlurPosition,
+  CurveEvent, MusicEvent, NoteEvent, SlurPosition,
 } from '@/core/types/MusicEvent'
 import { midiNumber } from '@/core/validation/pitch'
 import type { PlayedMeasure } from '@/core/validation/repeats'
@@ -18,7 +18,7 @@ import type { PlaybackSetup } from '../types/PlaybackSetup'
 import { buildCurves } from './buildCurves'
 import { clamp01, evaluateCurve } from './curves'
 import {
-    applyMode, DEFAULT_GRACE_NOTES, DEFAULT_INITIAL_DYNAMICS, resolveInterpretationProfile,
+  applyMode, DEFAULT_GRACE_NOTES, DEFAULT_INITIAL_DYNAMICS, resolveInterpretationProfile,
 } from './interpretation'
 import type { Placed, ScoreIndex } from './scoreIndex'
 import { absTick, indexScore, resolveAnchor } from './scoreIndex'
