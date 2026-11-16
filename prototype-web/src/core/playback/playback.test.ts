@@ -159,6 +159,18 @@ describe('note events', () => {
     expect(slurred.every(n => n.techniques.includes('core:legato'))).toBe(true)
   })
 
+  it('takes the time of a grace note before the beat from the note before it', () => {
+    const { events } = play(piano(), setups.piano)
+    const rightHand = notesOf(events).filter(n => n.staffId === 'pno-rh' && n.voiceIndex === 0)
+    const grace = rightHand.find(n => n.pitch === 79)!
+    const before = rightHand.find(n => n.startTick === 1920)!
+    expect(grace).toMatchObject({ startTick: 2880 - 120, durationTicks: 120 })
+    expect(before.startTick + before.durationTicks).toBe(grace.startTick)
+    // Other voices are left alone: the left hand still holds its chord to the barline.
+    const leftHand = notesOf(events).filter(n => n.staffId === 'pno-lh' && n.startTick === 0)
+    expect(leftHand.every(n => n.durationTicks === 2880)).toBe(true)
+  })
+
   it('reads velocity from the dynamics curve', () => {
     const first = notesOf(events)[0]!
     expect(first.velocity).toBeCloseTo(0.45) // mp
@@ -520,6 +532,15 @@ describe('MIDI output', () => {
 
 describe('MIDI file', () => {
   const cases = { melody, piano, band, strings }
+
+  it('gives a pickup bar and a short last bar their own time signature', () => {
+    const file = readMidi(play(melody(), setups.melody).file)
+    const signatures = file.tracks[0]!
+      .filter(e => e.status === 0xff && e.data[0] === 0x58)
+      .map(e => [e.tick, `${e.data[1]}/${2 ** e.data[2]!}`])
+    // Two eighths of pickup, three full bars, then the three beats that complete it.
+    expect(signatures).toEqual([[0, '1/4'], [960, '4/4'], [12480, '3/4']])
+  })
 
   it.each(Object.keys(cases) as (keyof typeof cases)[])('%s reads back', name => {
     const music = cases[name]()
