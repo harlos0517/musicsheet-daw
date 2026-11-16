@@ -4,7 +4,8 @@
 		"dev": "vite dev",
 		"lint": "eslint . --ext .ts,.tsx,.js,.jsx",
 		"lint:fix": "eslint . --ext .ts,.tsx,.js,.jsx --fix",
-		"test": "vitest run"
+		"test": "vitest run",
+		"midi": "JITI_ALIAS=\"{\\\"@\\\":\\\"$PWD/src\\\"}\" jiti src/scripts/export-midi.ts"
 	},
 	"dependencies": {
 		"@mantine/core": "^9.5.1",
