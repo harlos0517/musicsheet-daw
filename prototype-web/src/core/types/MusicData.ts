@@ -1,4 +1,4 @@
-export enum NoteType {
+export enum DurationType {
   LONGA = 4,
   DOUBLE = 3,
   WHOLE = 2,
@@ -120,16 +120,16 @@ export interface KeySignature extends MusicDataNode {
 }
 
 export interface Duration {
-  type: NoteType
-  dot: number
+  type: DurationType
+  dots: number
 }
 
 export interface Tempo extends MusicDataNode {
   kind: 'tempo'
   unit: Duration
-  value: number
-  tickInMeasure: number
-  displayText?: string
+  bpm: number
+  tick: number
+  text?: string
 }
 
 export interface Clef extends MusicDataNode {
@@ -175,7 +175,7 @@ export interface Tuplet extends MusicDataNode {
 export interface Note extends MusicDataNode {
   kind: 'note'
   pitch: Pitch
-  tie?: { to: string } | { letRing: true }
+  tie?: { to: string }[] | { letRing: true } // multiple targets when crossing repeats
   accidentalDisplay?: 'show' | 'hide' | 'cautionary'
 }
 
@@ -291,7 +291,7 @@ export type GlobalSpanner = Volta | TempoChange
 
 interface AttachmentBase extends MusicDataNode {
   staffIds?: string[] // default: all staves of the track
-  voiceIndex?: number[] // default: all voices
+  voiceIndexes?: number[] // default: all voices
   beforeTick?: boolean // default: false
   // placed at the end of the previous event (e.g. the dynamic where a hairpin ends),
   // not on the chord at this tick.
@@ -347,5 +347,5 @@ export interface KitEntry extends MusicDataNode {
 export interface UnpitchedNote extends MusicDataNode {
   kind: 'unpitched-note'
   kitEntryId: string
-  tie?: { to: string } | { letRing: true }
+  tie?: { to: string }[] | { letRing: true } // multiple targets when crossing repeats
 }

@@ -29,7 +29,8 @@ type BeamMode = NonNullable<Chord['beam']>
 
 interface NoteOptions {
   id?: string
-  tieTo?: string
+  /** One note id, or several when the tie leads into more than one ending. */
+  tieTo?: string | string[]
 }
 
 interface ChordOptions {
@@ -58,7 +59,7 @@ export class ScoreBuilder {
     const value = Number(match[1])
     const type = value === 0 ? 3 : Math.log2(4 / value)
     if (!Number.isInteger(type)) throw new Error(`bad duration "${text}"`)
-    return { type, dot: match[2]!.length }
+    return { type, dots: match[2]!.length }
   }
 
   /** "C4", "F#5", "Bb3", "Ebb4", "Gx2". */
@@ -77,7 +78,9 @@ export class ScoreBuilder {
       id: options.id ?? this.id('n'),
       kind: 'note',
       pitch: this.pitch(pitch),
-      ...(options.tieTo !== undefined ? { tie: { to: options.tieTo } } : {}),
+      ...(options.tieTo !== undefined
+        ? { tie: [options.tieTo].flat().map(to => ({ to })) }
+        : {}),
     }
   }
 
@@ -191,9 +194,9 @@ export class ScoreBuilder {
       id: this.id('tempo'),
       kind: 'tempo',
       unit: this.duration(unit),
-      value,
-      tickInMeasure: options.tick ?? 0,
-      ...(options.text !== undefined ? { displayText: options.text } : {}),
+      bpm: value,
+      tick: options.tick ?? 0,
+      ...(options.text !== undefined ? { text: options.text } : {}),
     }
   }
 

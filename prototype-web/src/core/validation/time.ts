@@ -10,7 +10,7 @@ import type {
 
 /** Nominal length of a duration in ticks, ignoring any enclosing tuplet. */
 export const durationTicks = (duration: Duration, tpq: number): number =>
-  tpq * 2 ** duration.type * (2 - 2 ** -duration.dot)
+  tpq * 2 ** duration.type * (2 - 2 ** -duration.dots)
 
 /** How many ticks a tuplet occupies in its parent: `normal` units of `unit`. */
 const tupletTicks = (tuplet: Tuplet, tpq: number): number =>

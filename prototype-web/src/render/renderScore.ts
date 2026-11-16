@@ -30,6 +30,7 @@ import type {
 } from '@/core/types/MusicData'
 import { BarlineStyle, ClefType } from '@/core/types/MusicData'
 import { transposeKey } from '@/core/validation/pitch'
+import { tieTargets as tieTargetsOf } from '@/core/validation/ties'
 import { type MeasureInfo, measureTimeline, timeVoice } from '@/core/validation/time'
 
 import {
@@ -144,7 +145,7 @@ export const renderScore = (
           if (event.kind !== 'chord') continue
           for (const n of event.notes) {
             elementTicks.set(n.id, { tick, ticks, staffId: staff.id })
-            if (n.tie && 'to' in n.tie) tieTargets.add(n.tie.to)
+            for (const target of tieTargetsOf(n)) tieTargets.add(target)
           }
         }
       }
@@ -456,13 +457,13 @@ export const renderScore = (
   /** Tempo, voltas, segno/coda and jumps go on the top stave of each system. */
   function decorateTopStave(stave: Stave, m: number, systemStart: boolean) {
     const measure = timeline[m]!.measure
-    const tempo = measure.tempos.find(t => t.tickInMeasure === 0)
+    const tempo = measure.tempos.find(t => t.tick === 0)
     if (tempo) {
       stave.setTempo({
-        ...(tempo.displayText !== undefined ? { name: tempo.displayText } : {}),
+        ...(tempo.text !== undefined ? { name: tempo.text } : {}),
         duration: vfDuration(tempo.unit),
-        dots: tempo.unit.dot,
-        bpm: tempo.value,
+        dots: tempo.unit.dots,
+        bpm: tempo.bpm,
       }, systemStart ? -10 : 0)
     }
 
@@ -607,25 +608,38 @@ export const renderScore = (
     events.forEach(event => {
       if (event.kind !== 'chord') return
       for (const n of event.notes) {
-        if (!n.tie || !('to' in n.tie)) continue
         const from = refs.get(n.id)
-        const to = refs.get(n.tie.to)
-        if (!from || !to) continue
-        safely('tie', () => {
-          if (from.system === to.system) {
-            new StaveTie({
-              firstNote: from.note,
-              lastNote: to.note,
-              firstIndexes: [from.index ?? 0],
-              lastIndexes: [to.index ?? 0],
-            }).setContext(ctx).draw()
-          } else {
-            new StaveTie({ firstNote: from.note, firstIndexes: [from.index ?? 0] })
-              .setContext(ctx).draw()
-            new StaveTie({ lastNote: to.note, lastIndexes: [to.index ?? 0] })
-              .setContext(ctx).draw()
-          }
-        })
+        const fromTime = elementTicks.get(n.id)
+        if (!from || !fromTime) continue
+        const targets = tieTargetsOf(n)
+        // A target that does not follow directly (a second ending) cannot be joined to
+        // the note by one arc, so the tie is drawn as two open halves.
+        const follows = (id: string) =>
+          elementTicks.get(id)?.tick === fromTime.tick + fromTime.ticks
+        const outgoing = () =>
+          new StaveTie({ firstNote: from.note, firstIndexes: [from.index ?? 0] })
+        const incoming = (to: NoteRef) =>
+          new StaveTie({ lastNote: to.note, lastIndexes: [to.index ?? 0] })
+        let leaves = false
+        for (const targetId of targets) {
+          const to = refs.get(targetId)
+          if (!to) continue
+          safely('tie', () => {
+            if (follows(targetId) && from.system === to.system) {
+              new StaveTie({
+                firstNote: from.note,
+                lastNote: to.note,
+                firstIndexes: [from.index ?? 0],
+                lastIndexes: [to.index ?? 0],
+              }).setContext(ctx).draw()
+              leaves = true
+              return
+            }
+            if (!leaves) outgoing().setContext(ctx).draw()
+            leaves = true
+            incoming(to).setContext(ctx).draw()
+          })
+        }
       }
     })
   }
@@ -740,11 +754,11 @@ export const renderScore = (
       dashedLine(ctx, x1 + 28, x2, y - 4)
     }
   }
-  timeline.forEach(info => info.measure.tempos.filter(t => t.tickInMeasure > 0).forEach(t => {
-    const tick = info.startTick + t.tickInMeasure
+  timeline.forEach(info => info.measure.tempos.filter(t => t.tick > 0).forEach(t => {
+    const tick = info.startTick + t.tick
     const system = drawn[systemIndexAt(tick)]!
     const topStaff = entries[0]!.staff.id
-    const label = t.displayText ?? `♩ = ${t.value}`
+    const label = t.text ?? `♩ = ${t.bpm}`
     const x = xAt(system, topStaff, tick)
     drawText(ctx, label, x, staffTopY(system, topStaff) - 30, { size: 12, weight: 'bold' })
   }))

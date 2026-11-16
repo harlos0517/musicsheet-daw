@@ -243,7 +243,7 @@ export const buildStaffMeasure = (
       if (mark.cautionary) accidental.setAsCautionary()
       note.addModifier(accidental, i)
     })
-    for (let d = 0; d < chord.duration.dot; d++) Dot.buildAndAttach([note], { all: true })
+    for (let d = 0; d < chord.duration.dots; d++) Dot.buildAndAttach([note], { all: true })
   }
 
   const buildChord = (chord: Chord, tick: number, voiceIndex: number): StaveNote => {
@@ -252,7 +252,7 @@ export const buildStaffMeasure = (
     const note = new StaveNote({
       keys: keyed.map(k => keyFor(k.index, headCode(k.head, chord.duration))),
       duration: vfDuration(chord.duration),
-      dots: chord.duration.dot,
+      dots: chord.duration.dots,
       clef: clefName,
       ...stemFor(voiceIndex),
       ...(chord.duration.type === 4 ? { durationOverride: new Fraction(4, 1) } : {}),
@@ -272,7 +272,7 @@ export const buildStaffMeasure = (
         const grace = new GraceNote({
           keys: gKeyed.map(k => keyFor(k.index, headCode(k.head, g.duration))),
           duration: vfDuration(g.duration),
-          dots: g.duration.dot,
+          dots: g.duration.dots,
           clef: clefName,
           slash: chord.graceNotes!.slash ?? false,
         })
@@ -307,12 +307,12 @@ export const buildStaffMeasure = (
       : new StaveNote({
         keys: [key],
         duration: vfDuration(event.duration),
-        dots: event.duration.dot,
+        dots: event.duration.dots,
         type: 'r',
         clef: vfClef(clef).name,
       })
     if (!event.fullMeasure)
-      for (let d = 0; d < event.duration.dot; d++) Dot.buildAndAttach([note], { all: true })
+      for (let d = 0; d < event.duration.dots; d++) Dot.buildAndAttach([note], { all: true })
     refs.set(event.id, { note })
     return note
   }
@@ -349,7 +349,7 @@ export const buildStaffMeasure = (
         }
         let note: VFNote
         if (event.kind === 'space') {
-          note = new GhostNote({ duration: vfDuration(event.duration), dots: event.duration.dot })
+          note = new GhostNote({ duration: vfDuration(event.duration), dots: event.duration.dots })
           breakBeam()
         } else if (event.kind === 'rest') {
           note = buildRest(event, absolute, voiceIndex)

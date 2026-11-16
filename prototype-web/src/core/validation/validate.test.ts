@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { examples } from '@/core/examples'
 import { band } from '@/core/examples/band'
+import { ScoreBuilder } from '@/core/examples/build'
 import { melody } from '@/core/examples/melody'
 import { piano } from '@/core/examples/piano'
 import type MusicData from '@/core/types/MusicData'
@@ -84,10 +85,37 @@ describe('validate', () => {
   it('reports ties to a note that does not follow', () => {
     const music = melody()
     const source = (voiceAt(music, 0, 0, 1).events[0] as Chord).notes[0] as Note
-    source.tie = { to: 'mel-tie-end' }
+    source.tie = [{ to: 'mel-tie-end' }]
     expect(codes(music)).toEqual(expect.arrayContaining([
       'tie-not-adjacent', 'tie-duplicate-target',
     ]))
+  })
+
+  it('accepts a tie into a second ending, but not into a measure playback cannot reach', () => {
+    // Band: bar 1 is followed by bar 2 (first ending) and by bar 3 (second ending).
+    const clarinetBar = (music: MusicData, bar: number, text: string) => {
+      const events = new ScoreBuilder(`t${bar}`).seq(text)
+      voiceAt(music, 0, 0, bar - 1).events = events
+      return (events[0] as Chord).notes[0] as Note
+    }
+    const lastOfBar1 = (music: MusicData) =>
+      (voiceAt(music, 0, 0, 0).events.at(-1) as Chord).notes[0] as Note
+
+    const endings = band()
+    const second = clarinetBar(endings, 3, '2:C5 2:r')
+    lastOfBar1(endings).tie = [{ to: second.id }]
+    expect(validate(endings)).toEqual([])
+
+    const unreachable = band()
+    const fourth = clarinetBar(unreachable, 4, '2:C5 2:r')
+    lastOfBar1(unreachable).tie = [{ to: fourth.id }]
+    expect(codes(unreachable)).toEqual(['tie-not-adjacent'])
+  })
+
+  it('warns about an empty tie list', () => {
+    const music = melody()
+    ;((voiceAt(music, 0, 0, 1).events[0] as Chord).notes[0] as Note).tie = []
+    expect(codes(music)).toEqual(['tie-empty'])
   })
 
   it('reports tuplets whose contents do not add up', () => {
@@ -137,7 +165,7 @@ describe('validate', () => {
 
   it('reports duplicate voice indexes and filters naming a missing voice', () => {
     const music = piano()
-    music.tracks[0]!.attachments[0]!.voiceIndex = [1]
+    music.tracks[0]!.attachments[0]!.voiceIndexes = [1]
     expect(codes(music)).toEqual([])
     music.tracks[0]!.attachments[0]!.staffIds = ['pno-lh'] // the left hand has one voice
     expect(codes(music)).toContain('unknown-voice')
@@ -162,9 +190,9 @@ describe('validate', () => {
 
 describe('time', () => {
   it('computes durations', () => {
-    expect(durationTicks({ type: 0, dot: 0 }, 960)).toBe(960)
-    expect(durationTicks({ type: 1, dot: 1 }, 960)).toBe(2880)
-    expect(durationTicks({ type: -1, dot: 2 }, 960)).toBe(840)
+    expect(durationTicks({ type: 0, dots: 0 }, 960)).toBe(960)
+    expect(durationTicks({ type: 1, dots: 1 }, 960)).toBe(2880)
+    expect(durationTicks({ type: -1, dots: 2 }, 960)).toBe(840)
   })
 
   it('places measures, including pickups', () => {

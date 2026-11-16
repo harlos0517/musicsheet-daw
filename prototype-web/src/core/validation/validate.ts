@@ -12,8 +12,10 @@ import type {
   UnpitchedNote,
   VoiceEvent,
 } from '@/core/types/MusicData'
-import { ClefType, NoteType } from '@/core/types/MusicData'
+import { ClefType, DurationType } from '@/core/types/MusicData'
 import { midiNumber } from './pitch'
+import { expandRepeats } from './repeats'
+import { tieTargets as tieTargetsOf } from './ties'
 import {
   type MeasureInfo,
   durationTicks,
@@ -51,7 +53,7 @@ type Where = Omit<Located, 'node' | 'path'>
 type Anchor = ElementAnchor | TickAnchor
 
 const NOTE_TYPES = new Set<number>(
-  Object.values(NoteType).filter((v): v is number => typeof v === 'number'),
+  Object.values(DurationType).filter((v): v is number => typeof v === 'number'),
 )
 const ANCHORABLE = new Set(['chord', 'rest', 'note', 'unpitched-note'])
 const TECHNIQUE_ID = /^[a-z0-9-]+:[a-z0-9-]+$/i
@@ -137,12 +139,12 @@ export const validate = (music: MusicData): Problem[] => {
       const tPath = `${path}.tempos[${j}]`
       register(tempo, tPath)
       checkDuration(tempo.unit, `${tPath}.unit`)
-      if (!(tempo.value > 0))
-        error('invalid-tempo', tPath, `tempo value must be positive, got ${tempo.value}`)
-      if (tempo.tickInMeasure < 0 || tempo.tickInMeasure >= lengthTicks) {
+      if (!(tempo.bpm > 0))
+        error('invalid-tempo', tPath, `tempo value must be positive, got ${tempo.bpm}`)
+      if (tempo.tick < 0 || tempo.tick >= lengthTicks) {
         error(
           'tick-out-of-range', tPath,
-          `tickInMeasure ${tempo.tickInMeasure} is outside the measure (0…${lengthTicks - 1})`,
+          `tickInMeasure ${tempo.tick} is outside the measure (0…${lengthTicks - 1})`,
         )
       }
     })
@@ -162,8 +164,8 @@ export const validate = (music: MusicData): Problem[] => {
   function checkDuration(duration: Duration, path: string) {
     if (!NOTE_TYPES.has(duration.type))
       error('invalid-duration', path, `unknown note type ${duration.type}`)
-    if (!isInt(duration.dot) || duration.dot < 0 || duration.dot > 4)
-      error('invalid-duration', path, `dots must be an integer 0…4, got ${duration.dot}`)
+    if (!isInt(duration.dots) || duration.dots < 0 || duration.dots > 4)
+      error('invalid-duration', path, `dots must be an integer 0…4, got ${duration.dots}`)
     const ticks = durationTicks(duration, tpq)
     if (!isInt(ticks)) error('non-integer-ticks', path, `duration is ${ticks} ticks; raise tpq`)
   }
@@ -402,7 +404,7 @@ export const validate = (music: MusicData): Problem[] => {
       }
       if (seen.has(key)) warn('duplicate-note', nPath, 'the same note appears twice in this chord')
       seen.add(key)
-      if (note.tie && 'to' in note.tie) tieSources.push({ note, path: nPath })
+      if (Array.isArray(note.tie)) tieSources.push({ note, path: nPath })
     })
 
     const types = new Set<string>()
@@ -416,61 +418,89 @@ export const validate = (music: MusicData): Problem[] => {
 
   /* ---------- references ---------- */
 
-  // Ties: the target must be the same pitch, on the same track,
-  // starting exactly where the source ends.
+  // Ties: every target must be the same pitch, on the same track, and start where the
+  // note ends: either right after it, or at the start of a measure that can be played
+  // after the note's measure (a tie into a second ending, or back over a repeat).
+  const follows = new Set<string>()
+  try {
+    const played = expandRepeats(music, timeline)
+    played.forEach((measure, i) => {
+      const next = played[i + 1]
+      if (next) follows.add(`${measure.info.index}>${next.info.index}`)
+    })
+  } catch {
+    // Broken repeats are reported elsewhere; ties then only pass when directly adjacent.
+  }
+  const measureAt = (tick: number) => timeline.findLast(info => info.startTick <= tick)
+
   const tieTargets = new Set<string>()
   for (const { note, path } of tieSources) {
-    const tiePath = `${path}.tie`
-    const to = (note.tie as { to: string }).to
+    const targets = tieTargetsOf(note)
+    if (targets.length === 0) warn('tie-empty', `${path}.tie`, 'tie has no target', note.id)
+    if (new Set(targets).size !== targets.length)
+      warn('tie-repeated-target', `${path}.tie`, 'the same tie target is listed twice', note.id)
     const source = index.get(note.id)
-    const target = index.get(to)
-    if (!target) {
-      error('tie-target-missing', tiePath, `tie target "${to}" does not exist`, note.id)
-      continue
-    }
-    const targetNode = target.node
-    if (targetNode.kind !== note.kind) {
-      error(
-        'tie-target-kind', tiePath,
-        `tie target "${to}" is a ${targetNode.kind}, expected a ${note.kind}`, note.id,
-      )
-      continue
-    }
-    if (tieTargets.has(to))
-      warn('tie-duplicate-target', tiePath, `more than one note ties into "${to}"`, note.id)
-    tieTargets.add(to)
-    if (source?.trackId !== target.trackId)
-      error('tie-cross-track', tiePath, 'ties must stay within one track', note.id)
+    targets.forEach((to, i) => {
+      const tiePath = `${path}.tie[${i}]`
+      const target = index.get(to)
+      if (!target) {
+        error('tie-target-missing', tiePath, `tie target "${to}" does not exist`, note.id)
+        return
+      }
+      const targetNode = target.node
+      if (targetNode.kind !== note.kind) {
+        error(
+          'tie-target-kind', tiePath,
+          `tie target "${to}" is a ${targetNode.kind}, expected a ${note.kind}`, note.id,
+        )
+        return
+      }
+      if (tieTargets.has(to))
+        warn('tie-duplicate-target', tiePath, `more than one note ties into "${to}"`, note.id)
+      tieTargets.add(to)
+      if (source?.trackId !== target.trackId)
+        error('tie-cross-track', tiePath, 'ties must stay within one track', note.id)
 
-    if (note.kind === 'note' && targetNode.kind === 'note') {
-      const targetPitch = (targetNode as Note).pitch
-      if (midiNumber(note.pitch) !== midiNumber(targetPitch)) {
+      if (note.kind === 'note' && targetNode.kind === 'note') {
+        const targetPitch = (targetNode as Note).pitch
+        if (midiNumber(note.pitch) !== midiNumber(targetPitch)) {
+          error(
+            'tie-pitch-mismatch', tiePath,
+            `tied notes have different pitches (target at ${target.path})`, note.id,
+          )
+        } else if (note.pitch.step !== targetPitch.step)
+          warn('tie-enharmonic', tiePath, 'tied notes are spelled differently', note.id)
+      } else if (
+        note.kind === 'unpitched-note'
+        && (targetNode as UnpitchedNote).kitEntryId !== note.kitEntryId
+      ) {
         error(
           'tie-pitch-mismatch', tiePath,
-          `tied notes have different pitches (target at ${target.path})`, note.id,
+          'tied unpitched notes use different kit entries', note.id,
         )
-      } else if (note.pitch.step !== targetPitch.step)
-        warn('tie-enharmonic', tiePath, 'tied notes are spelled differently', note.id)
-    } else if (
-      note.kind === 'unpitched-note'
-      && (targetNode as UnpitchedNote).kitEntryId !== note.kitEntryId
-    ) {
-      error(
-        'tie-pitch-mismatch', tiePath,
-        'tied unpitched notes use different kit entries', note.id,
-      )
-    }
+      }
 
-    const sourceEnd = source?.tick !== undefined && source.ticks !== undefined
-      ? source.tick + source.ticks
-      : undefined
-    const timed = !source?.isGrace && !target.isGrace && sourceEnd !== undefined
-    if (timed && target.tick !== sourceEnd) {
-      error(
-        'tie-not-adjacent', tiePath,
-        `tie target starts at tick ${target.tick}, but the note ends at ${sourceEnd}`, note.id,
-      )
-    }
+      const sourceEnd = source?.tick !== undefined && source.ticks !== undefined
+        ? source.tick + source.ticks
+        : undefined
+      const timed = !source?.isGrace && !target.isGrace && sourceEnd !== undefined
+      if (!timed || target.tick === sourceEnd || target.tick === undefined) return
+      // Not directly adjacent: allowed from the end of a measure to the start of one
+      // that playback can reach next.
+      const from = measureAt(sourceEnd - 1)
+      const into = measureAt(target.tick)
+      const acrossBarline = from !== undefined && into !== undefined
+        && sourceEnd === from.startTick + from.lengthTicks
+        && target.tick === into.startTick
+        && follows.has(`${from.index}>${into.index}`)
+      if (!acrossBarline) {
+        error(
+          'tie-not-adjacent', tiePath,
+          `tie target starts at tick ${target.tick}, but the note ends at ${sourceEnd} `
+          + 'and no repeat or jump leads from one to the other', note.id,
+        )
+      }
+    })
   }
 
   /** Resolves an anchor to an absolute tick, reporting problems. Returns undefined if it can't. */
@@ -597,7 +627,7 @@ export const validate = (music: MusicData): Problem[] => {
       register(attachment, path, { trackId: track.id })
       resolveAnchor(attachment.at, `${path}.at`, track.id)
       checkStaffIds(attachment.staffIds, path)
-      checkVoiceIndexes(attachment.voiceIndex, attachment.staffIds, path)
+      checkVoiceIndexes(attachment.voiceIndexes, attachment.staffIds, path)
       if (attachment.kind === 'technique') {
         checkPasses(attachment.passes, `${path}.passes`)
         checkTechniqueId(attachment.techniqueId, `${path}.techniqueId`)
