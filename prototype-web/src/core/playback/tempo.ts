@@ -47,6 +47,9 @@ export const buildTempoMap = (
   const markedAt = (tick: number) =>
     marked.findLast(point => point.tick <= tick)?.qpm ?? marked[0]?.qpm ?? DEFAULT_QPM
 
+  // Ramp points go in front of the marks, so a tempo mark written where a ramp ends
+  // (an "a tempo" after a rit.) is what counts from there on.
+  const ramps: TempoPoint[] = []
   for (const spanner of music.globalSpanners) {
     if (spanner.kind !== 'tempo-change') continue
     const start = resolveAnchor(index, spanner.start)
@@ -60,10 +63,11 @@ export const buildTempoMap = (
     for (let tick = startTick; tick < endTick; tick += step) {
       const middle = Math.min(endTick, tick + step / 2)
       const progress = (middle - startTick) / (endTick - startTick)
-      written.push({ tick, qpm: from + (to - from) * progress })
+      ramps.push({ tick, qpm: from + (to - from) * progress })
     }
-    written.push({ tick: endTick, qpm: to })
+    ramps.push({ tick: endTick, qpm: to })
   }
+  written.unshift(...ramps)
   written.sort((a, b) => a.tick - b.tick)
   const writtenAt = (tick: number) =>
     written.findLast(point => point.tick <= tick)?.qpm ?? written[0]?.qpm ?? DEFAULT_QPM
