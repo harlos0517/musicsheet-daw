@@ -314,26 +314,41 @@ export const setups: Record<'melody' | 'piano' | 'band' | 'strings', PlaybackSet
   melody: {
     ...shared,
     trackProfiles: {
-      'mel-flute': { interpretationProfileId: 'default', instrumentProfileId: 'wind' },
+      'mel-flute': {
+        interpretationProfileId: 'default',
+        outputs: [{ id: 'main', instrumentProfileId: 'wind' }],
+      },
     },
     overrides: [],
   },
   piano: {
     ...shared,
-    trackProfiles: { pno: { interpretationProfileId: 'piano', instrumentProfileId: 'piano' } },
+    trackProfiles: { pno: {
+      interpretationProfileId: 'piano',
+      outputs: [{ id: 'main', instrumentProfileId: 'piano' }],
+    } },
     overrides: [],
   },
   band: {
     ...shared,
     trackProfiles: {
-      'band-cl': { interpretationProfileId: 'default', instrumentProfileId: 'wind' },
-      'band-dr': { interpretationProfileId: 'default', instrumentProfileId: 'drums' },
+      'band-cl': {
+        interpretationProfileId: 'default',
+        outputs: [{ id: 'main', instrumentProfileId: 'wind' }],
+      },
+      'band-dr': {
+        interpretationProfileId: 'default',
+        outputs: [{ id: 'main', instrumentProfileId: 'drums' }],
+      },
     },
     overrides: [],
   },
   strings: {
     ...shared,
-    trackProfiles: { vln: { interpretationProfileId: 'strings', instrumentProfileId: 'violin' } },
+    trackProfiles: { vln: {
+      interpretationProfileId: 'strings',
+      outputs: [{ id: 'main', instrumentProfileId: 'violin' }],
+    } },
     overrides: [
       {
         // Hold the last note back a little and let it ring longer.
