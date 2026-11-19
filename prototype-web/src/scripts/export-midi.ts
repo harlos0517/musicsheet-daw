@@ -1,10 +1,14 @@
 /**
  * Writes each example score as a MIDI file, plus the MusicEvents and MIDI messages
- * behind it as JSON, into `midi-out/`. Run with `pnpm midi`.
+ * behind it as JSON, into `midi-out/`. MusicXML files in `scores/` are imported, checked
+ * and written too, each with a report of what the import left out. Run with `pnpm midi`.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, resolve } from 'node:path'
 
+import { cinematicSetup } from '@/core/examples/cinematicStudio'
+import { importMusicXml } from '@/core/musicxml/import'
+import { validate } from '@/core/validation/validate'
 import { band } from '@/core/examples/band'
 import { melody } from '@/core/examples/melody'
 import { piano } from '@/core/examples/piano'
@@ -28,5 +32,61 @@ for (const [name, build] of Object.entries(scores)) {
     `${result.events.length - notes} curve segments, ${messages} MIDI messages`,
   )
   for (const warning of result.warnings) console.log(`  warning: ${warning}`)
+}
+
+const scoreFolder = resolve(import.meta.dirname, '../../scores')
+const files = existsSync(scoreFolder)
+  ? readdirSync(scoreFolder).filter(file => /\.(musicxml|xml)$/i.test(file))
+  : []
+for (const file of files) {
+  const name = basename(file).replace(/\.[^.]+$/, '')
+  const source = readFileSync(resolve(scoreFolder, file), 'utf8')
+  const { music, kitNotes, skipped } = importMusicXml(source)
+  const problems = validate(music)
+  const setup = cinematicSetup(music, kitNotes)
+  const result = play(music, setup)
+  writeFileSync(resolve(out, `${name}.mid`), result.file)
+
+  const count = (items: string[]) => {
+    const counts = new Map<string, number>()
+    for (const item of items) counts.set(item, (counts.get(item) ?? 0) + 1)
+    return [...counts].sort((a, b) => b[1] - a[1])
+      .map(([item, n]) => `${String(n).padStart(6)}  ${item}`)
+  }
+  const notes = result.events.filter(event => event.kind === 'note-event').length
+  const report = [
+    `${music.title} (${file})`,
+    `${music.measures.length} measures, ${music.tracks.length} parts, ${notes} notes,`
+    + ` tpq ${music.tpq}`,
+    '',
+    'Parts, and the DAW tracks (outputs) and profiles each one plays on:',
+    ...music.tracks.flatMap(track => (setup.trackProfiles[track.id]?.outputs ?? [])
+      .map((output, i) => {
+        const profile = setup.instrumentProfiles.find(p => p.id === output.instrumentProfileId)
+        const part = i === 0 ? track.instrumentName : ''
+        const name = output.name && output.name !== track.instrumentName ? `→ ${output.name}: ` : ''
+        const keys = output.sounds
+          ? `  (${Object.entries(output.sounds).map(([from, to]) => `${from} → ${to}`).join(', ')})`
+          : ''
+        return `  ${part.padEnd(28)} ${name}${profile?.name ?? '?'}${keys}`
+      })),
+    '',
+    'Left out or approximated by the import:',
+    ...Object.entries(skipped).sort((a, b) => b[1] - a[1])
+      .map(([what, n]) => `${String(n).padStart(6)}  ${what}`),
+    '',
+    `Validation problems: ${problems.length}`,
+    ...count(problems.map(p => `${p.severity} ${p.code}`)),
+    ...problems.slice(0, 20).map(p => `  ${p.code}: ${p.message} (${p.path})`),
+    '',
+    `Playback warnings: ${result.warnings.length}`,
+    ...count(result.warnings.map(w => w.replace(/^note \S+: /, ''))),
+  ]
+  writeFileSync(resolve(out, `${name}.report.txt`), `${report.join('\n')}\n`)
+  const messages = result.tracks.reduce((sum, track) => sum + track.messages.length, 0)
+  console.log(
+    `${name}: ${music.tracks.length} parts, ${result.played.length} measures, ${notes} notes,`,
+    `${messages} MIDI messages, ${problems.length} validation problems`,
+  )
 }
 console.log(`written to ${out}`)
