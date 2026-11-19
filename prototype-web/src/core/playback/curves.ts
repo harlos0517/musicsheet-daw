@@ -53,10 +53,13 @@ const covers = (event: CurveEvent, scope: CurveScope | undefined): boolean =>
     && (a.voiceIndex === undefined || a.voiceIndex === scope.voiceIndex))
 
 /**
- * Value of a curve at a tick. A curve has two layers: the base, where the segment that
- * started last decides and its end value holds, and the `combine: 'add'` segments, whose
- * value is added on top the same way. `layer: 'base'` leaves the added layer out.
- * Without `scope`, segments limited to some voices count too.
+ * Value of a curve at a tick. A curve has three layers, each decided by the segment that
+ * started last, whose end value then holds:
+ *   base:  dynamics, hairpins and other written levels
+ *   scale: `combine: 'scale'` segments, which multiply the base (swells)
+ *   add:   `combine: 'add'` segments, added on top (accents)
+ * `layer: 'base'` gives the base alone. Without `scope`, segments limited to some
+ * voices count too.
  */
 export const evaluateCurve = (
   events: CurveEvent[],
@@ -67,17 +70,54 @@ export const evaluateCurve = (
   layer: 'total' | 'base' = 'total',
 ): number => {
   const key = curveKey(parameter)
-  let base: CurveEvent | undefined
-  let added: CurveEvent | undefined
+  const latest: Partial<Record<'base' | 'scale' | 'add', CurveEvent>> = {}
   for (const event of events) {
     if (curveKey(event.parameter) !== key || event.startTick > tick) continue
     if (!covers(event, scope)) continue
-    if (event.combine === 'add') {
-      if (!added || event.startTick >= added.startTick) added = event
-    } else if (!base || event.startTick >= base.startTick)
-      base = event
-
+    const name = layerOf(event)
+    const found = latest[name]
+    if (!found || event.startTick >= found.startTick) latest[name] = event
   }
-  const value = base ? segmentValue(base, tick) : fallback
-  return layer === 'total' && added ? value + segmentValue(added, tick) : value
+  return combine(latest, tick, fallback, layer)
+}
+
+const layerOf = (event: CurveEvent) =>
+  event.combine === 'add' ? 'add' : event.combine === 'scale' ? 'scale' : 'base'
+
+const combine = (
+  latest: Partial<Record<'base' | 'scale' | 'add', CurveEvent>>,
+  tick: number,
+  fallback: number,
+  layer: 'total' | 'base',
+): number => {
+  const base = latest.base ? segmentValue(latest.base, tick) : fallback
+  if (layer === 'base') return base
+  const scale = latest.scale ? segmentValue(latest.scale, tick) : 1
+  const add = latest.add ? segmentValue(latest.add, tick) : 0
+  return base * scale + add
+}
+
+/**
+ * The same as `evaluateCurve` for every voice at once, for ticks asked in increasing
+ * order. It walks the segments once instead of scanning them for every tick, which
+ * matters for curves with thousands of segments.
+ */
+export const curveSampler = (
+  events: CurveEvent[],
+  parameter: CurveParameter,
+  fallback: number,
+) => {
+  const key = curveKey(parameter)
+  const sorted = events.filter(event => curveKey(event.parameter) === key)
+    .sort((a, b) => a.startTick - b.startTick)
+  const latest: Partial<Record<'base' | 'scale' | 'add', CurveEvent>> = {}
+  let next = 0
+  return (tick: number): number => {
+    while (next < sorted.length && sorted[next]!.startTick <= tick) {
+      const event = sorted[next]!
+      latest[layerOf(event)] = event
+      next += 1
+    }
+    return combine(latest, tick, fallback, 'total')
+  }
 }

@@ -30,7 +30,9 @@ export interface CurveEvent extends MusicEventBase {
   parameter: CurveParameter
   // curve could be tied to a technique group with continuous values
   appliesTo?: { staffId: string, voiceIndex?: number }[]
-  combine?: 'add' | 'replace' // defaults to replace
+  combine?: 'add' | 'replace' | 'scale' // defaults to replace
+  // scale: the value multiplies the rest of the curve (1 leaves it as it is); used for
+  // shaping that is relative to the written level, such as swells.
   startTick: number
   durationTicks: number
   fromValue: number // 0 ~ 1
