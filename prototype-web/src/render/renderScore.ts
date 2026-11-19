@@ -704,7 +704,8 @@ export const renderScore = (
       } else {
         const staffId = attachment.staffIds?.[0] ?? firstStaffId
         const y = staffTopY(system, staffId) - 18
-        const label = attachment.text ?? attachment.techniqueId
+        const label = attachment.text
+          ?? (attachment.kind === 'technique' ? attachment.techniqueId : '')
         drawText(ctx, label, x, y, { size: 12, style: 'italic' })
       }
     }

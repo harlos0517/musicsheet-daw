@@ -331,7 +331,13 @@ export type TechniqueMarking = AttachmentBase & {
   | { at: TickAnchor, scope: 'until-next' }
 )
 
-export type Attachment = Dynamic | TechniqueMarking
+export type TextMarking = AttachmentBase & {
+  kind: 'text'
+  text?: string // display, e.g. "pizz."
+  at: ElementAnchor | TickAnchor
+}
+
+export type Attachment = Dynamic | TechniqueMarking | TextMarking
 
 
 /** PERCUSSION */
