@@ -64,7 +64,7 @@ export const defaultIntent: InterpretationProfile = {
       then: { afterQn: 0.25, mode: 'set', value: 0.35, curveType: 'exp' },
     },
   ],
-  hairpin: { curveType: 'linear', defaultChange: 0.2 },
+  hairpin: { defaultChange: 0.2 }, // linear
   noteRules: [
     // Durations are set as a share of the notated length, so a later rule replaces an
     // earlier one instead of multiplying with it.

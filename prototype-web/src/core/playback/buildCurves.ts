@@ -151,7 +151,7 @@ const writeCurves = (ctx: TrackContext): Written[] => {
   }
 
   // Hairpins
-  const hairpinSetup = profile.hairpin ?? { curveType: 'linear' as const, defaultChange: 0.2 }
+  const hairpinSetup = profile.hairpin ?? { defaultChange: 0.2 }
   for (const spanner of track.trackSpanners) {
     if (spanner.kind !== 'hairpin') continue
     const start = tickOf(spanner.start)
@@ -174,8 +174,7 @@ const writeCurves = (ctx: TrackContext): Written[] => {
           durationTicks: end - start,
           fromValue: from,
           toValue: clamp01(to),
-          curveType: hairpinSetup.curveType,
-          ...(hairpinSetup.steepness !== undefined ? { steepness: hairpinSetup.steepness } : {}),
+          ...(rising ? hairpinSetup.cresc : hairpinSetup.dim) ?? {},
           ...(applies ? { appliesTo: applies } : {}),
         })
       },

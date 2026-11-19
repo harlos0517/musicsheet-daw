@@ -10,8 +10,8 @@ export default interface InterpretationProfile {
   initialDynamics?: number // 0 - 1
   dynamics?: DynamicMapping[] // merge by type
   hairpin?: {
-    curveType: CurveType
-    steepness?: number // how intense the curve is
+    cresc?: CurveShape // default: linear
+    dim?: CurveShape // default: linear
     defaultChange: number // when no dynamic ends it
   }
   graceNotes?: {
@@ -79,6 +79,11 @@ export type NoteRuleCondition = {
   maxNotatedQn?: number
   minNotatedQn?: number
   passes?: number[]
+}
+
+export interface CurveShape {
+  curveType: CurveType
+  steepness?: number // see CurveType
 }
 
 export type ChangeMode =  'set' | 'add' | 'scale'
