@@ -59,12 +59,18 @@ export const resolveInterpretationProfile = (
     const hairpin = profile.hairpin ?? resolved.hairpin
     const initialDynamics = profile.initialDynamics ?? resolved.initialDynamics
     const graceNotes = profile.graceNotes ?? resolved.graceNotes
+    const defaultPhrasing = profile.defaultPhrasing ?? resolved.defaultPhrasing
+    const swell = profile.swell ?? resolved.swell
+    const expandTremolo = profile.expandTremolo ?? resolved.expandTremolo
     resolved = {
       id,
       name: profile.name,
       dynamics,
       ...(initialDynamics !== undefined ? { initialDynamics } : {}),
       ...(graceNotes ? { graceNotes } : {}),
+      ...(defaultPhrasing ? { defaultPhrasing } : {}),
+      ...(swell ? { swell } : {}),
+      ...(expandTremolo ? { expandTremolo } : {}),
       ...(hairpin ? { hairpin } : {}),
       noteRules: mergeById(resolved.noteRules, profile.noteRules),
       curveRules: mergeById(resolved.curveRules, profile.curveRules),

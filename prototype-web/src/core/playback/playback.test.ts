@@ -4,17 +4,20 @@ import { band } from '@/core/examples/band'
 import { ScoreBuilder } from '@/core/examples/build'
 import { melody } from '@/core/examples/melody'
 import { piano } from '@/core/examples/piano'
-import { setups } from '@/core/examples/profiles'
 import { strings } from '@/core/examples/strings'
 import type { Chord, Note } from '@/core/types/MusicData'
 import { DynamicType } from '@/core/types/MusicData'
+import type InterpretationProfile from '@/core/types/InterpretationProfile'
 import type { CurveEvent, MusicEvent, NoteEvent } from '@/core/types/MusicEvent'
 import type { PlaybackSetup } from '@/core/types/PlaybackSetup'
 import { expandRepeats } from '@/core/validation/repeats'
 import { validate } from '@/core/validation/validate'
 import { play } from '.'
-import { curveKey, shape } from './curves'
+import { curveKey, curveSampler, evaluateCurve, segmentValue, shape } from './curves'
 import { resolveInterpretationProfile } from './interpretation'
+import { renderTrack } from './renderMidi'
+import type { TempoMap } from './tempo'
+import { setups } from './testProfiles'
 
 const notesOf = (events: MusicEvent[], trackId?: string) => events.filter(
   (e): e is NoteEvent => e.kind === 'note-event' && (!trackId || e.trackId === trackId),
@@ -448,6 +451,267 @@ describe('repeats and jumps', () => {
   })
 })
 
+describe('phrasing and context', () => {
+  const withRules = (extra: Partial<InterpretationProfile>): PlaybackSetup => ({
+    ...setups.melody,
+    interpretationProfiles: [
+      ...setups.melody.interpretationProfiles,
+      { id: 'test', name: 'Test', extends: 'default', noteRules: [], curveRules: [], ...extra },
+    ],
+    trackProfiles: {
+      'mel-flute': {
+        interpretationProfileId: 'test',
+        outputs: [{ id: 'main', instrumentProfileId: 'wind' }],
+      },
+    },
+  })
+
+  it('treats unbroken runs as slurs in connected phrasing', () => {
+    const { events } = play(melody(), withRules({ defaultPhrasing: 'connected' }))
+    expect(notesOf(events).map(n => n.slur ?? '-')).toEqual([
+      'first', 'last', // the pickup; the written slur after it is its own phrase
+      'first', 'inner', 'last', // the written slur
+      '-', // alone: staccato notes follow
+      '-', '-', '-', '-', // staccato notes are never connected
+      'first', 'inner', 'inner', 'inner', 'last', // up to the accent
+      'first', 'last', // the accent starts a new run
+    ])
+  })
+
+  it('switches phrasing where the page says so', () => {
+    const music = melody()
+    const track = music.tracks[0]!
+    // Anchored to the chord of the note at a tick, wherever it is nested (tuplets too).
+    const noteId = (tick: number) =>
+      notesOf(play(melody(), withRules({})).events).find(n => n.startTick === tick)!.sourceIds[0]!
+    const chordAt = (tick: number): string => {
+      const id = noteId(tick)
+      const find = (node: unknown): string | undefined => {
+        if (!node || typeof node !== 'object') return undefined
+        const value = node as { kind?: string, id?: string, notes?: { id: string }[] }
+        if (value.kind === 'chord' && value.notes?.some(n => n.id === id))
+          return value.id
+        for (const child of Object.values(node)) {
+          const found = find(child)
+          if (found) return found
+        }
+        return undefined
+      }
+      return find(track.staves)!
+    }
+    const mark = (techniqueId: string, tick: number) => track.attachments.push({
+      id: `mark-${tick}`, kind: 'technique', techniqueId, scope: 'until-next',
+      at: { type: 'element', id: chordAt(tick) },
+    })
+    mark('core:connected', 6720) // "cantabile" on the run after the staccato notes
+    mark('core:detached', 8960) // "maestoso" two notes before the accent
+    const { events } = play(music, withRules({}))
+    expect(notesOf(events).map(n => n.slur ?? '-')).toEqual([
+      '-', '-', // detached by default
+      'first', 'inner', 'last', // the written slur
+      '-', '-', '-', '-', '-',
+      'first', 'inner', 'last', // connected up to the "maestoso"
+      '-', '-', '-', '-',
+    ])
+  })
+
+  it('leaves unslurred notes alone by default', () => {
+    const { events } = play(melody(), withRules({}))
+    expect(notesOf(events).filter(n => n.slur)).toHaveLength(3)
+  })
+
+  it('lets a rule look at the note before and at the place in a slur', () => {
+    const { events } = play(melody(), withRules({
+      noteRules: [
+        {
+          id: 'after-short',
+          match: { kind: 'any' },
+          when: { maxPreviousNotatedQn: 0.5 },
+          actions: [{ op: 'addTechnique', techniqueId: 'test:after-short' }],
+        },
+        {
+          id: 'slur-end',
+          match: { kind: 'any' },
+          when: { slurPosition: 'last' },
+          actions: [{ op: 'addTechnique', techniqueId: 'test:slur-end' }],
+        },
+      ],
+    }))
+    const at = (tick: number) => notesOf(events).find(n => n.startTick === tick)!.techniques
+    expect(at(0)).not.toContain('test:after-short') // nothing before it
+    expect(at(480)).toContain('test:after-short') // after an eighth
+    expect(at(2400)).not.toContain('test:after-short') // after a dotted quarter
+    expect(notesOf(events).filter(n => n.techniques.includes('test:slur-end'))
+      .map(n => n.startTick)).toEqual([2880])
+  })
+
+  it('lets a rule judge length in real time', () => {
+    // At 96, an eighth lasts 312 ms and a triplet eighth 208 ms.
+    const fast = (when: NonNullable<InterpretationProfile['noteRules'][number]['when']>) =>
+      notesOf(play(melody(), withRules({
+        noteRules: [{
+          id: 'fast',
+          match: { kind: 'any' },
+          when,
+          actions: [{ op: 'addTechnique', techniqueId: 'test:fast' }],
+        }],
+      })).events).filter(n => n.techniques.includes('test:fast')).map(n => n.startTick)
+    expect(fast({ maxNotatedMs: 250 })).toEqual([8640, 8960, 9280]) // the triplet only
+    expect(fast({ maxNotatedMs: 320 })).toHaveLength(2 + 1 + 4 + 3) // and every eighth
+    // The note after each triplet eighth: the other two, and the note after the triplet.
+    expect(fast({ maxPreviousNotatedMs: 250 })).toEqual([8960, 9280, 9600])
+    // A note exactly at the limit counts, despite rounding in the tempo map
+    // (208.33... ms for a triplet eighth at 96).
+    expect(fast({ maxNotatedMs: 60000 / 96 / 3 })).toEqual([8640, 8960, 9280])
+  })
+
+  it('swells into and out of long notes and slow slurs', () => {
+    const swell = { minMs: 200, startLevel: 0.75, noteRatio: 0.25, slurRatio: 0.5 }
+    const { events } = play(melody(), withRules({ swell }))
+    const notes = notesOf(events)
+    const swells = events.filter((e): e is CurveEvent =>
+      e.kind === 'curve-event' && e.combine === 'scale')
+    const startsOf = (list: CurveEvent[]) => list.filter(e => e.segmentIndex === 0)
+      .map(e => e.startTick)
+
+    // The written slur B–A–G gets one swell; the staccato eighths (140 ms) get none.
+    const slurred = notes.filter(n => n.slur)
+    expect(startsOf(swells)).toContain(slurred[0]!.startTick)
+    for (const n of slurred.slice(1)) expect(startsOf(swells)).not.toContain(n.startTick)
+    for (const n of notes.filter(n => n.techniques.includes('core:staccato')))
+      expect(startsOf(swells)).not.toContain(n.startTick)
+
+
+    // Rise over half of the slur's first note, fall over half of its last. The note after
+    // it swells too, so the level stays low in between instead of jumping up.
+    const [first, last] = [slurred[0]!, slurred.at(-1)!]
+    const segments = (note: NoteEvent) => swells
+      .filter(e => e.id.startsWith(`${note.sourceIds[0]}@1#swell`))
+      .map(e => [e.startTick, e.durationTicks, e.fromValue, e.toValue])
+    expect(segments(first)).toEqual([
+      [first.startTick, first.durationTicks / 2, 0.75, 1],
+      [last.startTick + last.durationTicks / 2, last.durationTicks / 2, 1, 0.75],
+    ])
+    // That single long note is followed by staccato notes: the written level comes back
+    // when the first of them starts, not when the long note ends.
+    const single = notes.find(n => n.startTick === 3840)!
+    const staccato = notes.find(n => n.startTick > single.startTick)!
+    expect(segments(single)).toEqual([
+      [3840, 864 / 4, 0.75, 1],
+      [3840 + 864 * 3 / 4, 864 / 4, 1, 0.75],
+      [staccato.startTick, 0, 0.75, 1],
+    ])
+
+    // It scales the written level: 75 % of mp at the start, the full level in the middle.
+    const curve = (tick: number) => evaluateCurve(events.filter(
+      (e): e is CurveEvent => e.kind === 'curve-event'), 'dynamics', tick, 0.5)
+    expect(curve(first.startTick)).toBeCloseTo(0.45 * 0.75)
+    expect(curve(first.startTick + first.durationTicks)).toBeCloseTo(0.45)
+    // Velocities are not touched.
+    expect(first.velocity).toBeCloseTo(0.45)
+  })
+
+  it('shapes a cresc. and a dim. each its own way', () => {
+    const hairpin = {
+      cresc: { curveType: 'exp' as const, steepness: 3 },
+      dim: { curveType: 'exp' as const, steepness: -3 },
+      defaultChange: 0.2,
+    }
+    const shapeOf = (type: 'cresc' | 'dim') => {
+      const music = melody()
+      const spanner = music.tracks[0]!.trackSpanners.find(s => s.kind === 'hairpin')!
+      if (spanner.kind === 'hairpin') spanner.type = type
+      const segment = curvesOf(play(music, withRules({ hairpin })).events, 'dynamics')
+        .find(e => e.id.startsWith(spanner.id))!
+      return [segment.curveType, segment.steepness]
+    }
+    expect(shapeOf('cresc')).toEqual(['exp', 3])
+    expect(shapeOf('dim')).toEqual(['exp', -3])
+  })
+
+  it('shapes the rise and the fall of a swell separately', () => {
+    const swell = {
+      minMs: 200, startLevel: 0.75, noteRatio: 0.25, slurRatio: 0.5,
+      rise: { curveType: 'power' as const, steepness: -1 },
+      fall: { curveType: 'power' as const, steepness: 1 },
+    }
+    const swells = play(melody(), withRules({ swell })).events.filter((e): e is CurveEvent =>
+      e.kind === 'curve-event' && e.combine === 'scale' && e.durationTicks > 0)
+    const rises = swells.filter(e => e.segmentIndex === 0)
+    const falls = swells.filter(e => e.segmentIndex === 1)
+    expect(rises.length).toBeGreaterThan(0)
+    expect(falls.length).toBeGreaterThan(0)
+    for (const e of rises) expect([e.curveType, e.steepness]).toEqual(['power', -1])
+    for (const e of falls) expect([e.curveType, e.steepness]).toEqual(['power', 1])
+    // Eased out: a quarter of the way in it is 44 % up (1 - 0.75²), where linear is 25 %.
+    const rise = rises[0]!
+    const quarter = segmentValue(rise, rise.startTick + rise.durationTicks / 4)
+    expect(quarter).toBeCloseTo(0.75 + 0.25 * (1 - 0.75 ** 2))
+  })
+
+  it('leaves a swell out where the page changes the dynamic itself', () => {
+    const swell = { minMs: 200, startLevel: 0.75, noteRatio: 0.25, slurRatio: 0.5 }
+    const { events } = play(melody(), withRules({ swell }))
+    const swells = events.filter((e): e is CurveEvent =>
+      e.kind === 'curve-event' && e.combine === 'scale')
+    const hairpins = curvesOf(events, 'dynamics')
+      .filter(e => e.combine === undefined && e.durationTicks > 0)
+    expect(hairpins.length).toBeGreaterThan(0)
+    const inside = (from: number, to: number) =>
+      hairpins.some(h => h.startTick < to && h.startTick + h.durationTicks > from)
+    // No rise or fall lies over a hairpin...
+    for (const segment of swells.filter(e => e.durationTicks > 0))
+      expect(inside(segment.startTick, segment.startTick + segment.durationTicks)).toBe(false)
+    // ...and some were left out because of one: a long note under the cresc. has none.
+    const under = notesOf(events).filter(n => !n.slur && n.durationTicks >= 480
+      && inside(n.startTick, n.startTick + n.durationTicks))
+    expect(under.length).toBeGreaterThan(0)
+    for (const note of under)
+      expect(swells.some(e => e.segmentIndex === 0 && e.startTick === note.startTick)).toBe(false)
+  })
+
+  it('samples a curve in order the same as evaluating it tick by tick', () => {
+    const swell = { minMs: 200, startLevel: 0.75, noteRatio: 0.25, slurRatio: 0.5 }
+    const curves = play(melody(), withRules({ swell })).events
+      .filter((e): e is CurveEvent => e.kind === 'curve-event')
+    const sample = curveSampler(curves, 'dynamics', 0.5)
+    for (let tick = 0; tick < 16000; tick += 97)
+      expect(sample(tick)).toBeCloseTo(evaluateCurve(curves, 'dynamics', tick, 0.5))
+
+  })
+
+  it('lets a note take a controller over from a curve, by its length', () => {
+    const setup: PlaybackSetup = {
+      ...setups.melody,
+      instrumentProfiles: [{
+        ...setups.melody.instrumentProfiles.find(p => p.id === 'wind')!,
+        techniqueMappings: [{
+          matches: [{ kind: 'technique', techniqueId: 'core:staccato' }],
+          cc: [{ number: 1, value: { shortMs: 100, longMs: 1000, atShort: 0, atLong: 100 } }],
+        }],
+      }],
+    }
+    const { tracks, tempo } = play(melody(), setup)
+    const cc1 = tracks[0]!.messages.filter(m => m.type === 'cc' && m.data1 === 1)
+    // Four staccato eighths at 96: 312.5 ms written, which is 24 on that scale.
+    const taken = cc1.filter(m => m.source === 'technique-cc')
+    expect(taken.map(m => m.data2)).toEqual([24, 24, 24, 24])
+    expect(taken[0]!.timeMs).toBeCloseTo(tempo.tickToMs(4800) - 20) // with the keyswitch lead
+    // The value is held through the gaps between them, and the curve (mp = 57) only comes
+    // back at the next note that does not take it over.
+    const lastEnd = tempo.tickToMs(6240 + 240)
+    const between = cc1.filter(m => m.source === 'curve'
+      && m.timeMs > taken[0]!.timeMs && m.timeMs < lastEnd)
+    expect(between).toEqual([])
+    const back = cc1.find(m => m.source === 'curve' && m.timeMs >= lastEnd)!
+    expect(back.data2).toBe(57)
+    const nextOn = tracks[0]!.messages.find(m => m.source === 'note' && m.type === 'note-on'
+      && m.timeMs > lastEnd)!
+    expect(back.timeMs).toBeLessThanOrEqual(nextOn.timeMs)
+    expect(back.timeMs).toBeGreaterThan(lastEnd)
+  })
+})
+
 describe('tempo map', () => {
   it('converts ticks to time and back', () => {
     const { tempo } = play(melody(), setups.melody)
@@ -486,6 +750,25 @@ describe('MIDI output', () => {
     expect(presses).toEqual([24, 26, 24, 25, 24])
   })
 
+  it('presses a keyswitch again when only its velocity changes', () => {
+    // Some libraries pick the articulation by how hard one key is pressed.
+    const key = (velocity: number) => ({ keyswitch: { note: 24, velocity } })
+    const setup: PlaybackSetup = {
+      ...setups.melody,
+      instrumentProfiles: [{
+        ...setups.melody.instrumentProfiles.find(p => p.id === 'wind')!,
+        techniqueMappings: [
+          { matches: [], ...key(100) },
+          { matches: [{ kind: 'technique', techniqueId: 'core:staccato' }], ...key(30) },
+        ],
+      }],
+    }
+    const presses = play(melody(), setup).tracks[0]!.messages
+      .filter(m => m.source === 'keyswitch' && m.type === 'note-on')
+      .map(m => [m.data1, m.data2])
+    expect(presses).toEqual([[24, 100], [24, 30], [24, 100]])
+  })
+
   it('sends curves as controllers', () => {
     const pedal = play(piano(), setups.piano).tracks[0]!.messages
       .filter(m => m.type === 'cc' && m.data1 === 64)
@@ -496,6 +779,68 @@ describe('MIDI output', () => {
     expect(cc1[0]).toBe(57) // mp
     expect(cc1.at(-1)).toBe(89) // f
     expect(cc1).toEqual([...cc1].sort((a, b) => a - b))
+  })
+
+  describe('ramps become one CC message per value step', () => {
+    const tpq = 480
+    const tempo: TempoMap = { // 60 bpm: one quarter is one second
+      points: [{ tick: 0, qpm: 60 }],
+      tickToMs: tick => tick * 1000 / tpq,
+      msToTick: ms => ms * tpq / 1000,
+    }
+    const ramp = (beats: number, toValue: number) => {
+      const curve: CurveEvent = {
+        kind: 'curve-event', id: 'ramp', sourceIds: [], trackId: 't', pass: 1,
+        segmentIndex: 0, parameter: 'dynamics', startTick: 0, durationTicks: beats * tpq,
+        fromValue: 0, toValue, curveType: 'linear',
+      }
+      const wind = setups.melody.instrumentProfiles.find(p => p.id === 'wind')!
+      return renderTrack([curve], wind, tempo, []).messages
+        .filter(m => m.type === 'cc' && m.data1 === 1)
+    }
+
+    it('sends every value of a slow ramp, when it is reached', () => {
+      // 0 → 127 over four seconds: one step about every 31 ms.
+      const cc = ramp(4, 1)
+      expect(cc.map(m => m.data2)).toEqual([...Array(128).keys()])
+      // 63.5 rounds up to 64, reached halfway; found within the 1 ms check.
+      const half = cc.find(m => m.data2 === 64)!
+      expect(Math.abs(half.timeMs - 2000)).toBeLessThanOrEqual(1)
+    })
+
+    it('spreads values over the output range along its curve', () => {
+      const wind = setups.melody.instrumentProfiles.find(p => p.id === 'wind')!
+      const curved = {
+        ...wind,
+        curveMappings: [{
+          parameter: 'dynamics' as const,
+          defaultValue: 0.5,
+          cc: [{ number: 1, mapping: { low: 0, high: 127, curve: { curveType: 'power' as const,
+            steepness: 1 } } }],
+        }],
+      }
+      const curve: CurveEvent = {
+        kind: 'curve-event', id: 'ramp', sourceIds: [], trackId: 't', pass: 1,
+        segmentIndex: 0, parameter: 'dynamics', startTick: 0, durationTicks: 4 * tpq,
+        fromValue: 0, toValue: 1, curveType: 'linear',
+      }
+      const cc = renderTrack([curve], curved, tempo, []).messages
+        .filter(m => m.type === 'cc' && m.data1 === 1)
+      // Halfway up the ramp (0.5) is a quarter of the range: 0.5 squared.
+      const half = cc.findLast(m => m.timeMs <= 2000)!
+      expect(half.data2).toBe(Math.round(127 * 0.25))
+      expect(cc.at(-1)!.data2).toBe(127)
+    })
+
+    it('keeps a fast ramp at least 10 ms apart and still ends on the target', () => {
+      // 0 → 127 in a quarter of a second: a step every 2 ms, too dense to send all.
+      const cc = ramp(0.25, 1)
+      const gaps = cc.slice(1).map((m, i) => m.timeMs - cc[i]!.timeMs)
+      expect(Math.min(...gaps.slice(0, -1))).toBeGreaterThanOrEqual(10 - 1e-6)
+      expect(cc.length).toBeLessThanOrEqual(27)
+      expect(cc.at(-1)!.data2).toBe(127)
+      expect(cc.at(-1)!.timeMs).toBeCloseTo(250)
+    })
   })
 
   it('merges technique mappings per channel', () => {

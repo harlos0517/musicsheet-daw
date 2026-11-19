@@ -1,19 +1,38 @@
 /** qn stand for quarter note. ticks don't exist until tpq does. */
 
 import type { ArticulationType, DynamicType } from '@/core/types/MusicData'
-import type { CurveParameter, CurveType } from '@/core/types/MusicEvent'
+import type { CurveParameter, CurveType, SlurPosition } from '@/core/types/MusicEvent'
 
 export default interface InterpretationProfile {
   id: string
   name: string
   extends?: string // parent profile ID
   initialDynamics?: number // 0 - 1
+  defaultPhrasing?: 'detached' | 'connected' // default: detached
+  swell?: { // a small cresc. into and dim. out of long notes and slow slurs, not written
+    minMs: number // only notes played longer than this
+    slurMinMs?: number // a slur rises only from a first note written longer than this,
+    // and falls only into a last note that is; default: minMs. Set it to where a slur
+    // counts as a fast run, so that slow notes swell and fast runs do not
+    startLevel: number // fraction of the written dynamic it starts and ends at, e.g. 0.75
+    noteRatio: number // share of a single note the rise and the fall each take
+    slurRatio: number // share of the first note (rise) and the last note (fall) of a slur
+    rise?: CurveShape // default: linear
+    fall?: CurveShape // default: linear
+  }
+  // connected: an unbroken run of single notes in a voice is played as if slurred.
+  // A run breaks at a rest, a staccato note, an accent, a repeated pitch, a chord,
+  // and where a written slur begins or ends.
   dynamics?: DynamicMapping[] // merge by type
   hairpin?: {
     cresc?: CurveShape // default: linear
     dim?: CurveShape // default: linear
     defaultChange: number // when no dynamic ends it
   }
+  expandTremolo?: { // write measured tremolos out as repeated notes
+    unmeasuredMs?: number // also unmeasured ones (patches that cannot roll), each note
+    // about this long; default: an unmeasured tremolo stays one note, a roll
+  } // default: every tremolo stays one note, for the patch to play
   graceNotes?: {
     appoggiatura: {
       placement?: 'before-beat' | 'on-beat' // default: on-beat
@@ -73,11 +92,18 @@ export type NoteRuleMatch =
   | { kind: 'technique', techniqueId: string } // from TechniqueMarking / CustomSpanner
   | { kind: 'slur', position?: 'first' | 'inner' | 'last' }
   | { kind: 'grace', slash?: boolean }
+  | { kind: 'dynamic', type: DynamicType } // a dynamic written on the note, e.g. sfp
   | { kind: 'any' }
 
 export type NoteRuleCondition = {
   maxNotatedQn?: number
   minNotatedQn?: number
+  maxPreviousNotatedQn?: number // the note right before it in the same voice
+  // the same two in real time, at the tempo the note is played in:
+  maxNotatedMs?: number
+  maxPreviousNotatedMs?: number
+  slurPosition?: SlurPosition
+  hairpin?: 'cresc' | 'dim' // a hairpin of this kind runs over the note
   passes?: number[]
 }
 
@@ -95,3 +121,7 @@ export type NoteRuleAction =
   | { op: 'startOffset', qn: number } // does not move noteEnd
   | { op: 'addTechnique', techniqueId: string } // chaining techniques
   | { op: 'removeTechnique', techniqueId: string } // override technique
+  | { op: 'rollAttack', qn?: number, together: boolean } // a roll (an unmeasured tremolo
+  // that stays one note) starts with a single stroke of qn: played with it (together),
+  // or before it, the roll coming in after; without qn, the stroke rings as long as the
+  // roll (together only)
