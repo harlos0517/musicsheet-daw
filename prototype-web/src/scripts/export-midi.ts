@@ -1,7 +1,8 @@
 /**
- * Writes each example score as a MIDI file, plus the MusicEvents and MIDI messages
- * behind it as JSON, into `midi-out/`. MusicXML files in `scores/` are imported, checked
- * and written too, each with a report of what the import left out. Run with `pnpm midi`.
+ * Writes each example score as a MIDI file, plus its MusicData (`.music.json`, read by
+ * the C++ app) and the MusicEvents and MIDI messages behind it as JSON, into
+ * `midi-out/`. MusicXML files in `scores/` are imported, checked and written too, each
+ * with a report of what the import left out. Run with `pnpm midi`.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
@@ -15,13 +16,19 @@ import { piano } from '@/core/examples/piano'
 import { setups } from '@/core/examples/profiles'
 import { strings } from '@/core/examples/strings'
 import { play } from '@/core/playback'
+import type MusicData from '@/core/types/MusicData'
 
 const scores = { melody, piano, band, strings }
 const out = resolve(import.meta.dirname, '../../midi-out')
 mkdirSync(out, { recursive: true })
 
+const writeMusic = (name: string, music: MusicData) =>
+  writeFileSync(resolve(out, `${name}.music.json`), JSON.stringify(music, null, 2))
+
 for (const [name, build] of Object.entries(scores)) {
-  const result = play(build(), setups[name as keyof typeof scores])
+  const music = build()
+  writeMusic(name, music)
+  const result = play(music, setups[name as keyof typeof scores])
   writeFileSync(resolve(out, `${name}.mid`), result.file)
   writeFileSync(resolve(out, `${name}.events.json`), JSON.stringify(result.events, null, 2))
   writeFileSync(resolve(out, `${name}.midi.json`), JSON.stringify(result.tracks, null, 2))
@@ -42,6 +49,7 @@ for (const file of files) {
   const name = basename(file).replace(/\.[^.]+$/, '')
   const source = readFileSync(resolve(scoreFolder, file), 'utf8')
   const { music, kitNotes, skipped } = importMusicXml(source)
+  writeMusic(name, music)
   const problems = validate(music)
   const setup = cinematicSetup(music, kitNotes)
   const result = play(music, setup)
