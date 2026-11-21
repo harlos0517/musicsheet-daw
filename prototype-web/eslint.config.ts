@@ -9,5 +9,10 @@ export default defineConfig(
     extends: [
       harlos,
     ],
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
   },
 )
