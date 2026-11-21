@@ -1,7 +1,7 @@
 juce_add_gui_app(MusicsheetDawApp
     PRODUCT_NAME "Musicsheet DAW"
-    COMPANY_NAME "Murata Haru"
-    BUNDLE_ID "com.murataharu.musicsheetdaw")
+    COMPANY_NAME "Harlos"
+    BUNDLE_ID "com.harlos.musicsheetdaw")
 
 # Files compiled into the app, read through BinaryData:: (Leland_otf, …).
 juce_add_binary_data(MsdAppData

@@ -19,7 +19,7 @@ Music Data ──(expand repeats, tag pass #)──► played order
 
 ## License
 
-Copyright (C) 2026 Murata Haru
+Copyright (C) 2026 Harlos
 
 This program is free software: you can redistribute it and/or modify it under the
 terms of the GNU Affero General Public License as published by the Free Software
