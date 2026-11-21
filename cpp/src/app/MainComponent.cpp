@@ -87,7 +87,7 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
             staffBox.setSelectedId(static_cast<int>(it - staffIds.begin()) + 1, juce::dontSendNotification);
     }
     if (args.size() > 2)
-        firstSlider.setValue(args[2].getIntValue(), juce::dontSendNotification);
+        firstSlider.setValue(args[2].unquoted().getIntValue(), juce::dontSendNotification);
     relayout();
 }
 
