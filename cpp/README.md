@@ -124,23 +124,13 @@ several seconds, longer in Debug.
 
 ## Licensing
 
-| Component | License | Notes |
-|---|---|---|
-| Our code | GPLv3 | |
-| JUCE 8 | AGPLv3 or commercial | **Decision needed**, see below |
-| melatonin_inspector | MIT | Debug builds only |
-| nlohmann/json | MIT | |
-| Catch2 | BSL-1.0 | Tests only, not shipped |
-| Leland | SIL OFL 1.1 | Compiled into the app; the build copies its license next to the exe as `Leland-OFL.txt` |
-| SMuFL `glyphnames.json` | W3C Community Final Specification Agreement | **Check**: compiled into the app, see below |
+The project is licensed under the AGPLv3 or later (`/LICENSE`). JUCE is used
+under its AGPLv3 option, so the whole app is AGPLv3.
 
-GPLv3 §13 allows linking with AGPLv3 code, but the combined binary then carries
-AGPLv3's terms for the JUCE part (including §13's network-use clause). Options:
-keep GPLv3 for our code and accept that, relicense to AGPLv3 to keep it simple,
-or buy a JUCE commercial license.
-
-`glyphnames.json` comes with the SMuFL specification, which is published under the
-W3C Community Final Specification Agreement rather than a software license. It is a
-table of glyph names and codepoints, and MuseScore (GPLv3) ships the same file. If
-that's not acceptable, the alternative is a hand-written table of the codepoints
-the layout uses.
+`/THIRD_PARTY_NOTICES.md` lists everything the app contains and its license.
+At configure time `cmake/Notices.cmake` appends the full license texts, read from
+the fetched sources, and the build copies the result and `LICENSE.txt` next to the
+exe. When a dependency is added or updated, update that file's table, and add its
+license file to the list in `cmake/Notices.cmake` (a missing file stops the
+configure). Linking another JUCE module can bring its own bundled libraries: see
+JUCE's `LICENSE.md` for which.

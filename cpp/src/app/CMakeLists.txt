@@ -45,8 +45,12 @@ if(MSD_ENABLE_INSPECTOR)
     target_link_libraries(MusicsheetDawApp PRIVATE melatonin_inspector)
 endif()
 
-# Leland is under the SIL OFL, which asks for its license to travel with the font.
+# The app's license and the third-party notices (with Leland's OFL, which must travel
+# with the font) go next to the exe.
 add_custom_command(TARGET MusicsheetDawApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${LELAND_DIR}/LICENSE.txt
-        $<TARGET_FILE_DIR:MusicsheetDawApp>/Leland-OFL.txt)
+        ${PROJECT_SOURCE_DIR}/../LICENSE
+        $<TARGET_FILE_DIR:MusicsheetDawApp>/LICENSE.txt
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${MSD_NOTICES_FILE}
+        $<TARGET_FILE_DIR:MusicsheetDawApp>/THIRD_PARTY_NOTICES.txt)

@@ -30,6 +30,7 @@ option(MSD_ENABLE_INSPECTOR "Link melatonin inspector (Ctrl+I toggles it)" ${_ms
 option(MSD_BUILD_TESTS "Build the unit tests" ON)
 
 include(cmake/Dependencies.cmake)
+include(cmake/Notices.cmake)
 
 add_subdirectory(src/core)
 add_subdirectory(src/layout)
