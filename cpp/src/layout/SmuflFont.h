@@ -31,6 +31,8 @@ struct EngravingDefaults
     double thickBarlineThickness = 0.5;
     double barlineSeparation = 0.4;          // between the two lines of a double barline
     double thinThickBarlineSeparation = 0.4; // between the lines of a final barline
+    double beamThickness = 0.5;
+    double beamSpacing = 0.25;               // between two beams: inner edge to outer edge
 };
 
 class SmuflFont

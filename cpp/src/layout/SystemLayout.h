@@ -39,6 +39,7 @@ enum class Part {
     Dot,           // node: the note or rest; one box per dot
     Stem,          // node: the chord
     Flag,          // node: the chord
+    Beam,          // node: the chord where the beam starts; one box per beam and hook
     Rest,          // node: the rest
 };
 
@@ -57,12 +58,21 @@ struct LineShape
     double thickness = 0;
 };
 
+// A beam: a parallelogram with vertical ends at from.x and to.x, reaching
+// thickness / 2 above and below the line from `from` to `to`.
+struct BeamShape
+{
+    Point from;
+    Point to;
+    double thickness = 0;
+};
+
 struct LayoutBox
 {
     NodeId nodeId;   // the MusicData node it came from
     Part part = Part::Notehead;
     Rect bounds;     // what it covers, for hit testing and collisions
-    std::variant<GlyphShape, LineShape> shape;
+    std::variant<GlyphShape, LineShape, BeamShape> shape;
 };
 
 struct MeasureSlot
@@ -101,6 +111,16 @@ struct NoteSpacing
     double dotDotGapSp = 0.25;           // between the dots of a double-dotted note
 };
 
+// How beams sit, in sp. LayoutProfile has no fields for these yet.
+struct BeamSpacing
+{
+    double stemSp = 3.5;      // the shortest stem in a group: note → the beam's outer edge
+    double clearanceSp = 2.0; // note → the innermost beam's near edge, at least
+    double riseRatio = 0.5;   // how much of the interval between the end notes the beam follows
+    double maxRiseSp = 1.0;   // the most a beam rises or falls from end to end
+    double maxSlope = 0.25;   // and per sp of its length
+};
+
 struct SystemInput
 {
     const MusicData& music;
@@ -114,6 +134,7 @@ struct SystemInput
                                   // fit then comes out wider (overfull, until the next reflow).
     HeaderSpacing header {};
     NoteSpacing notes {};
+    BeamSpacing beams {};
 };
 
 // Throws std::invalid_argument for an unknown staff or a measure range outside the score.

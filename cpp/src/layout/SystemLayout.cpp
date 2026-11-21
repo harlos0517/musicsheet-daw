@@ -23,7 +23,8 @@
 //    onsets is stretched by one factor, or squeezed towards each onset's minimum, so
 //    the system fills `width`. It never squeezes below the minimum.
 // 3. Emit: turn every staff line, signature, event shape and barline into LayoutBoxes
-//    at their final position.
+//    at their final position. Beams come last: their slope and the stems that reach
+//    them depend on how far apart the notes ended up.
 
 namespace msd
 {
@@ -60,6 +61,19 @@ Tick timeSignatureTicks(const TimeSignature& timeSig, int tpq)
     return timeSig.unit > 0 ? Tick(timeSig.beats) * 4 * tpq / timeSig.unit : Tick(4) * tpq;
 }
 
+// The beat that beams group by when the data doesn't say: a dotted quarter in 6/8,
+// 9/8 and 12/8, a half in x/2, a quarter otherwise. The same rule as the prototype.
+Tick beamBeatTicks(const std::optional<TimeSignature>& timeSig, int tpq)
+{
+    if (timeSig && timeSig->unit == 8 && timeSig->beats % 3 == 0)
+        return Tick(tpq) * 3 / 2;
+    if (timeSig && timeSig->unit > 0 && timeSig->unit <= 2)
+        return Tick(tpq) * 2;
+    return tpq;
+}
+
+int flagCount(DurationType type) { return type <= DurationType::Eighth ? -static_cast<int>(type) : 0; }
+
 // One glyph or line of an event, before it has a place in the system.
 struct ShapeItem
 {
@@ -68,12 +82,23 @@ struct ShapeItem
     std::variant<GlyphShape, LineShape> shape;
 };
 
+// The stem of a beamed chord, drawn once the beam has its place.
+struct BeamedStem
+{
+    double x = 0;      // the stem's centre, from the onset
+    double startY = 0; // where it leaves the note at its start
+    double nearY = 0;  // the note nearest the beam
+    int beams = 0;     // 1 for an eighth, 2 for a sixteenth, …
+    bool up = true;
+};
+
 // Everything one chord or rest draws, around its onset at x = 0.
 struct EventShape
 {
     std::vector<ShapeItem> items; // in drawing order
     double left = 0;              // the leftmost point (accidentals, ledger lines)
     double right = 0;             // the rightmost point (noteheads, flags, dots)
+    std::optional<BeamedStem> beamedStem;
 };
 
 // A chord or rest with the tick it starts at, from the start of its measure.
@@ -83,6 +108,7 @@ struct PlacedEvent
     const Rest* rest = nullptr;
     int voice = 0;
     Tick tick = 0;
+    Tick length = 0; // tuplets included
     EventShape shape {};
 };
 
@@ -107,12 +133,14 @@ Tick placeEvents(const std::vector<VoiceEvent>& events, Tick start, Tick num, Ti
         const Tick at = start + nominal * num / den;
         std::visit(Overloaded {
                        [&](const Chord& chord) {
-                           out.push_back({ &chord, nullptr, voice, at });
-                           nominal += nominalTicks(chord.duration, tpq);
+                           const Tick length = nominalTicks(chord.duration, tpq);
+                           out.push_back({ &chord, nullptr, voice, at, length * num / den });
+                           nominal += length;
                        },
                        [&](const Rest& rest) {
-                           out.push_back({ nullptr, &rest, voice, at });
-                           nominal += nominalTicks(rest.duration, tpq);
+                           const Tick length = nominalTicks(rest.duration, tpq);
+                           out.push_back({ nullptr, &rest, voice, at, length * num / den });
+                           nominal += length;
                        },
                        [&](const Space& space) { nominal += nominalTicks(space.duration, tpq); },
                        [&](const Tuplet& tuplet) {
@@ -254,6 +282,7 @@ struct MeasurePlan
 
     std::vector<PlacedEvent> events;
     std::vector<Onset> onsets;
+    std::vector<std::vector<std::size_t>> beams; // each group's chords, indices into events
     bool severalVoices = false;
 };
 
@@ -417,6 +446,97 @@ private:
         return std::max(spacing.minNoteSp, spacing.quarterSp * std::pow(spacing.durationRatio, std::log2(quarters)));
     }
 
+    // Which chords share a beam, per voice: eighths and shorter within one beat, unless
+    // Chord::beam says otherwise. A rest ends the group unless it joins the previous
+    // event; so does a gap (a Space). A group of one chord gets a flag instead.
+    std::vector<std::vector<std::size_t>> beamGroups(const std::vector<PlacedEvent>& events) const
+    {
+        struct Open
+        {
+            std::vector<std::size_t> group;
+            Tick beat = -1;
+            Tick end = 0;
+        };
+        const Tick beat = beamBeatTicks(timeSig, tpq);
+        std::vector<std::vector<std::size_t>> groups;
+        std::map<int, Open> open; // per voice
+        auto close = [&](Open& o) {
+            if (o.group.size() > 1)
+                groups.push_back(o.group);
+            o.group.clear();
+        };
+        for (std::size_t i = 0; i < events.size(); ++i)
+        {
+            const PlacedEvent& event = events[i];
+            Open& o = open[event.voice];
+            if (event.tick != o.end)
+                close(o);
+            o.end = event.tick + event.length;
+            if (event.rest)
+            {
+                if (event.rest->beam != BeamMode::JoinPrevious)
+                    close(o);
+                continue;
+            }
+            const Chord& chord = *event.chord;
+            if (chord.duration.type > DurationType::Eighth || chord.beam == BeamMode::None)
+            {
+                close(o);
+                continue;
+            }
+            const Tick eventBeat = event.tick / beat;
+            if (chord.beam == BeamMode::JoinPrevious && !o.group.empty())
+                o.group.push_back(i);
+            else if (chord.beam == BeamMode::BreakBefore || eventBeat != o.beat)
+            {
+                close(o);
+                o.group = { i };
+            }
+            else
+                o.group.push_back(i);
+            o.beat = eventBeat;
+        }
+        for (auto& [voice, o] : open)
+            close(o);
+        std::sort(groups.begin(), groups.end(), [](const auto& a, const auto& b) { return a.front() < b.front(); });
+        return groups;
+    }
+
+    // A beamed group's stems all point one way: the way a single chord would, judged by
+    // the group's note farthest from the middle line. With several voices, by voice.
+    bool groupStemUp(const MeasurePlan& plan, const std::vector<std::size_t>& group) const
+    {
+        if (plan.severalVoices)
+            return plan.events[group.front()].voice % 2 == 0;
+        const double middle = middleLineY(lines);
+        double above = 0;
+        double below = 0;
+        for (const std::size_t e : group)
+        {
+            const PlacedEvent& event = plan.events[e];
+            const Clef eventClef = clefAt(plan, event.tick);
+            for (const ChordNote& chordNote : event.chord->notes)
+            {
+                const double y = noteY(chordNote, eventClef);
+                above = std::max(above, middle - y);
+                below = std::max(below, y - middle);
+            }
+        }
+        return below > above;
+    }
+
+    double noteY(const ChordNote& chordNote, const Clef& noteClef) const
+    {
+        return std::visit(Overloaded {
+                              [&](const Note& note) { return pitchY(note.pitch, noteClef, lines); },
+                              [&](const UnpitchedNote& note) {
+                                  const KitEntry* entry = kitEntry(note.kitEntryId);
+                                  return unpitchedY(entry ? entry->displayPitch : 0, lines);
+                              },
+                          },
+                          chordNote);
+    }
+
     MeasurePlan planMeasure(const Measure& measure, bool first)
     {
         MeasurePlan plan;
@@ -485,9 +605,20 @@ private:
         // In time order, so each note knows the accidentals before it in the measure.
         std::stable_sort(plan.events.begin(), plan.events.end(),
                          [](const PlacedEvent& a, const PlacedEvent& b) { return a.tick < b.tick; });
-        MeasureAccidentals accidentals(key ? key->accidentals : 0);
-        for (PlacedEvent& event : plan.events)
+        // Beam groups, and the stem direction each one shares.
+        plan.beams = beamGroups(plan.events);
+        std::vector<std::optional<bool>> beamUp(plan.events.size());
+        for (const std::vector<std::size_t>& group : plan.beams)
         {
+            const bool up = groupStemUp(plan, group);
+            for (const std::size_t e : group)
+                beamUp[e] = up;
+        }
+
+        MeasureAccidentals accidentals(key ? key->accidentals : 0);
+        for (std::size_t e = 0; e < plan.events.size(); ++e)
+        {
+            PlacedEvent& event = plan.events[e];
             if (event.chord)
             {
                 std::vector<std::optional<AccidentalMark>> marks;
@@ -498,7 +629,7 @@ private:
                         note ? accidentals.next(note->pitch, note->accidentalDisplay, tieTargets.contains(note->id))
                              : std::nullopt);
                 }
-                event.shape = chordShape(event, clefAt(plan, event.tick), plan.severalVoices, marks);
+                event.shape = chordShape(event, clefAt(plan, event.tick), plan.severalVoices, marks, beamUp[e]);
             }
             else
             {
@@ -556,6 +687,13 @@ private:
         out.boxes.push_back({ nodeId, part, lineBounds(from, to, thickness), LineShape { from, to, thickness } });
     }
 
+    void addBeam(const NodeId& nodeId, Point from, Point to, double thickness)
+    {
+        const double half = thickness / 2;
+        const Rect bounds { from.x, std::min(from.y, to.y) - half, to.x, std::max(from.y, to.y) + half };
+        out.boxes.push_back({ nodeId, Part::Beam, bounds, BeamShape { from, to, thickness } });
+    }
+
     // An event's shape, moved right by dx into the system.
     void emitShape(const EventShape& shape, double dx)
     {
@@ -599,19 +737,116 @@ private:
         const double right = x;
         const double contentLeft = left + plan.lead;
 
+        std::vector<double> eventX(plan.events.size());
         for (std::size_t i = 0; i < plan.onsets.size(); ++i)
             for (const std::size_t e : plan.onsets[i].events)
             {
                 const PlacedEvent& event = plan.events[e];
                 if (event.rest && event.rest->fullMeasure.value_or(false))
-                    emitShape(event.shape, (contentLeft + right) / 2 - (event.shape.left + event.shape.right) / 2);
+                    eventX[e] = (contentLeft + right) / 2 - (event.shape.left + event.shape.right) / 2;
                 else
-                    emitShape(event.shape, onsetX[i]);
+                    eventX[e] = onsetX[i];
+                emitShape(event.shape, eventX[e]);
             }
+        for (const std::vector<std::size_t>& group : plan.beams)
+            emitBeamGroup(plan, group, eventX);
 
         emitBarline(*plan.measure, right);
         out.measures.push_back({ plan.measure->id, left, right });
         return right;
+    }
+
+    // A beam group's stems and beams. The beam follows the end notes part of the way
+    // (flat when an inner note is nearer to it than both ends), then sits as near the
+    // notes as the shortest stem allows. Secondary beams join neighbours that both have
+    // them; a chord alone at its level gets a hook, pointing into the group.
+    void emitBeamGroup(const MeasurePlan& plan, const std::vector<std::size_t>& group,
+                       const std::vector<double>& eventX)
+    {
+        struct StemAt
+        {
+            const NodeId* chordId;
+            BeamedStem stem;
+            double x; // in the system
+        };
+        std::vector<StemAt> stems;
+        for (const std::size_t e : group)
+        {
+            const PlacedEvent& event = plan.events[e];
+            if (!event.shape.beamedStem)
+                return; // a chord without notes; nothing to beam
+            stems.push_back({ &event.chord->id, *event.shape.beamedStem, eventX[e] + event.shape.beamedStem->x });
+        }
+        const BeamSpacing& style = in.beams;
+        const bool up = stems.front().stem.up;
+        const double toNotes = up ? 1.0 : -1.0; // y direction from the beam to the notes
+        const double thickness = engraving.beamThickness;
+        const double distance = engraving.beamSpacing + thickness; // one beam's outer edge to the next's
+
+        const StemAt& first = stems.front();
+        const StemAt& last = stems.back();
+        const double span = last.x - first.x;
+        double rise =
+            std::clamp((last.stem.nearY - first.stem.nearY) * style.riseRatio, -style.maxRiseSp, style.maxRiseSp);
+        rise = std::clamp(rise, -style.maxSlope * span, style.maxSlope * span);
+        const double endsNearest =
+            up ? std::min(first.stem.nearY, last.stem.nearY) : std::max(first.stem.nearY, last.stem.nearY);
+        for (std::size_t i = 1; i + 1 < stems.size(); ++i)
+            if (up ? stems[i].stem.nearY < endsNearest : stems[i].stem.nearY > endsNearest)
+                rise = 0;
+        const double slope = span > 0 ? rise / span : 0.0;
+
+        // The beam's outer edge is base + slope * (x - first.x). Every stem gets at least
+        // stemSp, and room for its beams with clearanceSp between them and the note.
+        double base = up ? std::numeric_limits<double>::max() : std::numeric_limits<double>::lowest();
+        for (const StemAt& s : stems)
+        {
+            const double need = std::max(style.stemSp, style.clearanceSp + (s.stem.beams - 1) * distance + thickness);
+            const double candidate = s.stem.nearY - toNotes * need - slope * (s.x - first.x);
+            base = up ? std::min(base, candidate) : std::max(base, candidate);
+        }
+        // Like an unbeamed stem, the beam reaches at least the middle line.
+        const double middle = middleLineY(lines);
+        const double nearestEnd = up ? std::min(base, base + slope * span) : std::max(base, base + slope * span);
+        if (up ? nearestEnd > middle : nearestEnd < middle)
+            base += middle - nearestEnd;
+        auto edgeAt = [&](double x) { return base + slope * (x - first.x); };
+
+        const double stemThickness = engraving.stemThickness;
+        for (const StemAt& s : stems)
+            addLine(*s.chordId, Part::Stem, { s.x, s.stem.startY }, { s.x, edgeAt(s.x) }, stemThickness);
+
+        const double half = stemThickness / 2;
+        const double hook = glyphRight("noteheadBlack");
+        int levels = 0;
+        for (const StemAt& s : stems)
+            levels = std::max(levels, s.stem.beams);
+        for (int level = 1; level <= levels; ++level)
+        {
+            const double offset = toNotes * ((level - 1) * distance + thickness / 2); // edge → this beam's centre
+            auto beam = [&](const NodeId& nodeId, double fromX, double toX) {
+                addBeam(nodeId, { fromX, edgeAt(fromX) + offset }, { toX, edgeAt(toX) + offset }, thickness);
+            };
+            for (std::size_t i = 0; i < stems.size();)
+            {
+                if (stems[i].stem.beams < level)
+                {
+                    ++i;
+                    continue;
+                }
+                std::size_t j = i;
+                while (j + 1 < stems.size() && stems[j + 1].stem.beams >= level)
+                    ++j;
+                const StemAt& s = stems[i];
+                if (j > i)
+                    beam(*s.chordId, s.x - half, stems[j].x + half);
+                else if (i + 1 == stems.size())
+                    beam(*s.chordId, s.x - hook, s.x + half); // the last chord: back into the group
+                else
+                    beam(*s.chordId, s.x - half, s.x + hook);
+                i = j + 1;
+            }
+        }
     }
 
     void emitSignatures(const MeasurePlan& plan, double left)
@@ -703,9 +938,11 @@ private:
     }
 
     // A chord around x = 0: ledger lines, noteheads (seconds beside each other), stem,
-    // flag, dots and accidentals. `marks` has one entry per note of the chord.
+    // flag, dots and accidentals. `marks` has one entry per note of the chord. A beamed
+    // chord (beamUp set) takes its stem direction from its group, and has no stem or
+    // flag yet: the stem waits for the beam.
     EventShape chordShape(const PlacedEvent& event, const Clef& noteClef, bool severalVoices,
-                          const std::vector<std::optional<AccidentalMark>>& marks) const
+                          const std::vector<std::optional<AccidentalMark>>& marks, std::optional<bool> beamUp) const
     {
         const Chord& chord = *event.chord;
         const DurationType type = chord.duration.type;
@@ -717,14 +954,14 @@ private:
         for (std::size_t i = 0; i < chord.notes.size(); ++i)
             std::visit(Overloaded {
                            [&](const Note& note) {
-                               heads.push_back({ &note.id, noteheadGlyph(type), pitchY(note.pitch, noteClef, lines) });
+                               heads.push_back({ &note.id, noteheadGlyph(type), noteY(chord.notes[i], noteClef) });
                                heads.back().accidental = i < marks.size() ? marks[i] : std::nullopt;
                            },
                            [&](const UnpitchedNote& note) {
                                const KitEntry* entry = kitEntry(note.kitEntryId);
                                heads.push_back(
                                    { &note.id, kitNoteheadGlyph(entry ? entry->notehead : Notehead::Normal, type, font),
-                                     unpitchedY(entry ? entry->displayPitch : 0, lines) });
+                                     noteY(chord.notes[i], noteClef) });
                            },
                        },
                        chord.notes[i]);
@@ -739,8 +976,9 @@ private:
         const double bottomY = bottomIt->y;
 
         const bool hasStem = type <= DurationType::Half; // whole notes and longer have none
-        const bool up =
-            severalVoices ? event.voice % 2 == 0 : (bottomY - middle) > (middle - topY); // most of it below the middle
+        const bool up = beamUp          ? *beamUp
+                        : severalVoices ? event.voice % 2 == 0
+                                        : (bottomY - middle) > (middle - topY); // most of it below the middle
 
         // Seconds: two notes a step apart can't share a column. Going away from the stem's
         // start (from the bottom for an up stem), a note a second from one in the normal
@@ -796,23 +1034,30 @@ private:
             const Point anchor = up ? font.anchor(start.glyph, "stemUpSE").value_or(Point { box.right, 0 })
                                     : font.anchor(start.glyph, "stemDownNW").value_or(Point { box.left, 0 });
             const double stemX = anchor.x + (up ? -thickness / 2 : thickness / 2);
-            const double tip = up ? std::min(topY - stemLengthSp, middle) : std::max(bottomY + stemLengthSp, middle);
-            double end = tip;
-
-            const int flags = type <= DurationType::Eighth ? -static_cast<int>(type) : 0;
-            std::optional<GlyphShape> flag;
-            if (flags > 0)
+            const int flags = flagCount(type);
+            if (beamUp)
             {
-                const std::string glyph = flagGlyph(flags, up);
-                const Point flagAnchor = font.anchor(glyph, up ? "stemUpNW" : "stemDownSW").value_or(Point {});
-                const Point origin { stemX - thickness / 2 - flagAnchor.x, tip };
-                end = tip + flagAnchor.y;
-                flag = GlyphShape { glyph, origin };
+                shape.beamedStem = BeamedStem { stemX, start.y + anchor.y, up ? topY : bottomY, flags, up };
             }
-            addItem(shape, chord.id, Part::Stem,
-                    LineShape { { stemX, start.y + anchor.y }, { stemX, end }, thickness });
-            if (flag)
-                addItem(shape, chord.id, Part::Flag, *flag);
+            else
+            {
+                const double tip =
+                    up ? std::min(topY - stemLengthSp, middle) : std::max(bottomY + stemLengthSp, middle);
+                double end = tip;
+                std::optional<GlyphShape> flag;
+                if (flags > 0)
+                {
+                    const std::string glyph = flagGlyph(flags, up);
+                    const Point flagAnchor = font.anchor(glyph, up ? "stemUpNW" : "stemDownSW").value_or(Point {});
+                    const Point origin { stemX - thickness / 2 - flagAnchor.x, tip };
+                    end = tip + flagAnchor.y;
+                    flag = GlyphShape { glyph, origin };
+                }
+                addItem(shape, chord.id, Part::Stem,
+                        LineShape { { stemX, start.y + anchor.y }, { stemX, end }, thickness });
+                if (flag)
+                    addItem(shape, chord.id, Part::Flag, *flag);
+            }
         }
 
         // Dots: in the space of each note, the one above for a note on a line (below, for

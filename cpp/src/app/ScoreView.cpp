@@ -36,6 +36,7 @@ juce::String partName(Part part)
     case Part::Dot: return "dot";
     case Part::Stem: return "stem";
     case Part::Flag: return "flag";
+    case Part::Beam: return "beam";
     case Part::Rest: return "rest";
     }
     return "?";
@@ -114,6 +115,21 @@ void ScoreView::paint(juce::Graphics& g)
             path.addLineSegment({ static_cast<float>(line->from.x), static_cast<float>(line->from.y),
                                   static_cast<float>(line->to.x), static_cast<float>(line->to.y) },
                                 static_cast<float>(line->thickness));
+            g.fillPath(path, view);
+        }
+        else if (const auto* beam = std::get_if<BeamShape>(&box.shape))
+        {
+            const float half = static_cast<float>(beam->thickness / 2);
+            const float x1 = static_cast<float>(beam->from.x);
+            const float y1 = static_cast<float>(beam->from.y);
+            const float x2 = static_cast<float>(beam->to.x);
+            const float y2 = static_cast<float>(beam->to.y);
+            juce::Path path; // vertical ends, `thickness` tall
+            path.startNewSubPath(x1, y1 - half);
+            path.lineTo(x2, y2 - half);
+            path.lineTo(x2, y2 + half);
+            path.lineTo(x1, y1 + half);
+            path.closeSubPath();
             g.fillPath(path, view);
         }
     }

@@ -60,6 +60,8 @@ SmuflFont SmuflFont::parse(std::string_view metadataJson)
         readDefault(*it, "thickBarlineThickness", d.thickBarlineThickness);
         readDefault(*it, "barlineSeparation", d.barlineSeparation);
         readDefault(*it, "thinThickBarlineSeparation", d.thinThickBarlineSeparation);
+        readDefault(*it, "beamThickness", d.beamThickness);
+        readDefault(*it, "beamSpacing", d.beamSpacing);
     }
 
     const auto boxes = j.find("glyphBBoxes");
