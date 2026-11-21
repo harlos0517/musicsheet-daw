@@ -30,8 +30,7 @@ using Tick = std::int64_t;
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
 // Numeric in TS and in the JSON: the value is log2 of the length in quarters.
-enum class DurationType : std::int8_t
-{
+enum class DurationType : std::int8_t {
     Longa = 4,
     Double = 3,
     Whole = 2,
@@ -136,8 +135,10 @@ struct Marker
     std::optional<std::string> label; // for scores with several codas
 };
 
-struct JumpToStart {};    // JSON: { "type": "start" }
-struct JumpToMarker       // JSON: { "type": "marker", "id": ... }
+struct JumpToStart // JSON: { "type": "start" }
+{};
+
+struct JumpToMarker // JSON: { "type": "marker", "id": ... }
 {
     NodeId id;
 };
@@ -180,7 +181,9 @@ struct TieTarget
 {
     NodeId to;
 };
-struct LetRing {}; // JSON: { "letRing": true }
+
+struct LetRing // JSON: { "letRing": true }
+{};
 
 // TS: { to: string }[] | { letRing: true }. Several targets when crossing repeats.
 using Tie = std::variant<std::vector<TieTarget>, LetRing>;

@@ -56,7 +56,8 @@ std::string note(const std::string& id, const char* step, int octave)
 
 const MusicData& twoMeasures()
 {
-    static const MusicData music = parseMusicData(R"({
+    static const MusicData music =
+        parseMusicData(R"({
       "title": "Two", "composer": "", "tpq": 480, "globalSpanners": [],
       "measures": [
         { "id": "m1", "kind": "measure", "tempos": [], "markers": [], "jumps": [],
@@ -70,12 +71,12 @@ const MusicData& twoMeasures()
           { "id": "sm1", "kind": "staff-measure", "measureId": "m1",
             "clefs": [{ "tick": 0, "clef": { "id": "clef", "kind": "clef", "type": "g", "line": 2, "octaveChange": 0 } }],
             "voices": [{ "id": "v1", "kind": "voice", "index": 0, "events": [)"
-        + chord("c1", 0, note("n1", "c", 4)) + "," + chord("c2", 0, note("n2", "e", 4)) + ","
-        + chord("c3", 1, note("n3", "g", 4) + "," + note("n4", "b", 4)) + R"(] }] },
+                       + chord("c1", 0, note("n1", "c", 4)) + "," + chord("c2", 0, note("n2", "e", 4)) + ","
+                       + chord("c3", 1, note("n3", "g", 4) + "," + note("n4", "b", 4)) + R"(] }] },
           { "id": "sm2", "kind": "staff-measure", "measureId": "m2", "clefs": [],
             "voices": [{ "id": "v2", "kind": "voice", "index": 0, "events": [
               { "id": "r1", "kind": "rest", "duration": { "type": 0, "dots": 0 } },)"
-        + chord("c5", 0, note("n5", "a", 5)) + "," + chord("c6", 1, note("n6", "d", 5)) + R"(] }] }
+                       + chord("c5", 0, note("n5", "a", 5)) + "," + chord("c6", 1, note("n6", "d", 5)) + R"(] }] }
         ] }]
       }]
     })");
@@ -84,8 +85,13 @@ const MusicData& twoMeasures()
 
 SystemLayout layOut(std::size_t first, std::size_t count, std::optional<double> width = std::nullopt)
 {
-    return layoutSystem({ .music = twoMeasures(), .profile = defaultProfile(), .font = leland(),
-                          .staffId = "s1", .firstMeasure = first, .measureCount = count, .width = width });
+    return layoutSystem({ .music = twoMeasures(),
+                          .profile = defaultProfile(),
+                          .font = leland(),
+                          .staffId = "s1",
+                          .firstMeasure = first,
+                          .measureCount = count,
+                          .width = width });
 }
 
 std::vector<const LayoutBox*> boxesOf(const SystemLayout& layout, Part part)
@@ -148,7 +154,8 @@ TEST_CASE("Leland's metadata loads", "[layout][font]")
 
 TEST_CASE("SMuFL glyph names map to codepoints", "[layout][font]")
 {
-    const SmuflGlyphNames names = SmuflGlyphNames::load(std::filesystem::path(MSD_SMUFL_DIR) / "metadata" / "glyphnames.json");
+    const SmuflGlyphNames names =
+        SmuflGlyphNames::load(std::filesystem::path(MSD_SMUFL_DIR) / "metadata" / "glyphnames.json");
     CHECK(names.size() > 2000);
     CHECK(names.codepoint("gClef") == U'');
     CHECK(names.codepoint("noteheadBlack") == U'');
@@ -212,7 +219,8 @@ TEST_CASE("one system: where things go", "[layout]")
     CHECK(originX(boxFor(layout, "n4", Part::Notehead)) == g4); // same chord, same x
 
     // Second measure: padding after the barline, then the rest.
-    CHECK(originX(boxFor(layout, "r1", Part::Rest)) == Approx(layout.measures[1].left + profile.spacing.measurePaddingSp));
+    CHECK(originX(boxFor(layout, "r1", Part::Rest))
+          == Approx(layout.measures[1].left + profile.spacing.measurePaddingSp));
 
     // C4 is below the middle: stem up, on the right, an octave long.
     const LayoutBox& lowStem = boxFor(layout, "c1", Part::Stem);
@@ -238,8 +246,10 @@ TEST_CASE("a given width stretches only the space between notes", "[layout]")
     CHECK(wide.measures.back().right == Approx(wide.width));
 
     // The header doesn't move; the notes spread out evenly.
-    CHECK(originX(boxFor(wide, "ts", Part::TimeSignature)) == Approx(originX(boxFor(natural, "ts", Part::TimeSignature))));
-    const double naturalGap = originX(boxFor(natural, "n2", Part::Notehead)) - originX(boxFor(natural, "n1", Part::Notehead));
+    CHECK(originX(boxFor(wide, "ts", Part::TimeSignature))
+          == Approx(originX(boxFor(natural, "ts", Part::TimeSignature))));
+    const double naturalGap =
+        originX(boxFor(natural, "n2", Part::Notehead)) - originX(boxFor(natural, "n1", Part::Notehead));
     const double wideGap = originX(boxFor(wide, "n2", Part::Notehead)) - originX(boxFor(wide, "n1", Part::Notehead));
     CHECK(wideGap > naturalGap);
 }
@@ -254,8 +264,9 @@ TEST_CASE("a system that starts later repeats the clef and key, not the time", "
 
 TEST_CASE("bad requests throw", "[layout]")
 {
-    CHECK_THROWS_AS(layoutSystem({ .music = twoMeasures(), .profile = defaultProfile(), .font = leland(), .staffId = "nope" }),
-                    std::invalid_argument);
+    CHECK_THROWS_AS(
+        layoutSystem({ .music = twoMeasures(), .profile = defaultProfile(), .font = leland(), .staffId = "nope" }),
+        std::invalid_argument);
     CHECK_THROWS_AS(layOut(1, 2), std::invalid_argument);
 }
 
@@ -292,8 +303,12 @@ TEST_CASE("every exported score lays out", "[.][exported]")
             {
                 INFO(staff.id);
                 SystemLayout layout;
-                REQUIRE_NOTHROW(layout = layoutSystem({ .music = music, .profile = defaultProfile(), .font = leland(),
-                                                        .staffId = staff.id, .measureCount = count, .width = 150.0 }));
+                REQUIRE_NOTHROW(layout = layoutSystem({ .music = music,
+                                                        .profile = defaultProfile(),
+                                                        .font = leland(),
+                                                        .staffId = staff.id,
+                                                        .measureCount = count,
+                                                        .width = 150.0 }));
                 CHECK(layout.measures.size() == count);
                 CHECK(layout.width == Approx(150.0));
 

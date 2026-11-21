@@ -1,0 +1,72 @@
+# The C++ style of cpp/, for clang-format (and format-on-save in editors).
+# Written for clang-format 21; check with:  clang-format --dry-run --Werror <files>
+---
+Language: Cpp
+BasedOnStyle: Microsoft
+Standard: c++20
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+LineEnding: DeriveLF
+InsertNewlineAtEOF: true
+MaxEmptyLinesToKeep: 1
+
+# Braces on their own line (Allman), except around lambda bodies.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: true
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+AccessModifierOffset: -4
+NamespaceIndentation: None
+IndentCaseLabels: false
+IndentPPDirectives: BeforeHash
+PPIndentWidth: 4
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+Cpp11BracedListStyle: false # { a, b } with spaces inside
+SpaceBeforeCpp11BracedList: true # Point { 1, 2 }
+
+AllowShortFunctionsOnASingleLine: All
+AllowShortLambdasOnASingleLine: All
+AllowShortEnumsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+
+BreakConstructorInitializers: BeforeComma
+PackConstructorInitializers: Never
+ConstructorInitializerIndentWidth: 4
+BreakTemplateDeclarations: Yes
+AlwaysBreakAfterReturnType: None
+
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+BreakBeforeBinaryOperators: NonAssignment
+AlignTrailingComments:
+  Kind: Leave
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignEscapedNewlines: Left
+ReflowComments: false
+
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive

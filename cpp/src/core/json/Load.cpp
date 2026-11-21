@@ -81,8 +81,7 @@ void expectTag(const Json& j, const Path& p, const char* tag, std::string_view e
 {
     const std::string_view actual = tagOf(j, p, tag);
     if (actual != expected)
-        fail(p, std::string(tag) + " is \"" + std::string(actual) + "\", expected \""
-                    + std::string(expected) + "\"");
+        fail(p, std::string(tag) + " is \"" + std::string(actual) + "\", expected \"" + std::string(expected) + "\"");
 }
 
 void expectKind(const Json& j, const Path& p, std::string_view kind) { expectTag(j, p, "kind", kind); }
@@ -97,8 +96,10 @@ void read(const Json&, const Path&, std::int64_t&);
 void read(const Json&, const Path&, double&);
 void read(const Json&, const Path&, std::string&);
 void read(const Json&, const Path&, DurationType&);
-template <NamedEnum E> void read(const Json&, const Path&, E&);
-template <class T> void read(const Json&, const Path&, std::vector<T>&);
+template <NamedEnum E>
+void read(const Json&, const Path&, E&);
+template <class T>
+void read(const Json&, const Path&, std::vector<T>&);
 void read(const Json&, const Path&, std::map<NodeId, double>&);
 void read(const Json&, const Path&, std::map<PlacedKind, Side>&);
 
@@ -1018,10 +1019,7 @@ T readRootFrom(const Json& j, const std::filesystem::path& file)
 
 MusicData parseMusicData(std::string_view json) { return readRoot<MusicData>(parseText(json)); }
 
-MusicData loadMusicData(const std::filesystem::path& file)
-{
-    return readRootFrom<MusicData>(parseFile(file), file);
-}
+MusicData loadMusicData(const std::filesystem::path& file) { return readRootFrom<MusicData>(parseFile(file), file); }
 
 LayoutSetup parseLayoutSetup(std::string_view json) { return readRoot<LayoutSetup>(parseText(json)); }
 

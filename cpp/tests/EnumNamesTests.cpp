@@ -9,10 +9,9 @@
 using namespace msd;
 
 // Every name maps back to its value, and no two values share a name.
-TEMPLATE_TEST_CASE("enum names round-trip", "[enum]",
-    ArticulationType, ClefType, Step, BarlineStyle, DynamicType, BeamMode,
-    AccidentalDisplay, GracePlacement, MarkerType, HairpinType, PedalType,
-    TempoChangeType, TechniqueScope, Notehead, PlacedKind, Side, BreakType, StemDirection)
+TEMPLATE_TEST_CASE("enum names round-trip", "[enum]", ArticulationType, ClefType, Step, BarlineStyle, DynamicType,
+                   BeamMode, AccidentalDisplay, GracePlacement, MarkerType, HairpinType, PedalType, TempoChangeType,
+                   TechniqueScope, Notehead, PlacedKind, Side, BreakType, StemDirection)
 {
     std::set<std::string_view> seen;
     for (const auto& [value, name] : EnumNames<TestType>::entries)

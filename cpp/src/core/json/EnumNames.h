@@ -48,12 +48,15 @@ constexpr std::string_view enumName(E value)
 }
 
 // Writes a specialisation of EnumNames for one enum.
-#define MSD_ENUM_NAMES(Enum, ...)                                              \
-    template <>                                                                \
-    struct EnumNames<Enum>                                                     \
-    {                                                                          \
+#define MSD_ENUM_NAMES(Enum, ...)                                                       \
+    template <>                                                                         \
+    struct EnumNames<Enum>                                                              \
+    {                                                                                   \
         static constexpr std::pair<Enum, std::string_view> entries[] = { __VA_ARGS__ }; \
     };
+
+// The tables keep one value per line; clang-format would pack them together.
+// clang-format off
 
 // ── MusicData ──────────────────────────────────────────────────────────────────
 
@@ -165,6 +168,8 @@ MSD_ENUM_NAMES(BreakType,
 MSD_ENUM_NAMES(StemDirection,
     { StemDirection::Up, "up" },
     { StemDirection::Down, "down" })
+
+// clang-format on
 
 #undef MSD_ENUM_NAMES
 

@@ -38,7 +38,8 @@ juce::String partName(Part part)
     return "?";
 }
 
-ScoreView::ScoreView(MusicFont& musicFont) : font(musicFont)
+ScoreView::ScoreView(MusicFont& musicFont)
+    : font(musicFont)
 {
     setOpaque(true);
 }

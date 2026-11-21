@@ -28,6 +28,15 @@ CMake Tools reads `CMakePresets.json` and sets up the MSVC environment itself,
 so configure, build and debug work from its status bar without a developer
 shell; IntelliSense takes its flags from the same build.
 
+### Formatting
+
+`cpp/.clang-format` describes the code's style (written for clang-format 21), so
+format-on-save keeps it. To check every file without changing anything:
+
+```powershell
+clang-format --dry-run --Werror (git ls-files 'cpp/src/*.cpp' 'cpp/src/*.h' 'cpp/tests/*.cpp')
+```
+
 ### By hand
 
 MSVC and Ninja are only on PATH inside a developer shell.

@@ -30,8 +30,8 @@ struct Rect
 
     Rect united(const Rect& other) const
     {
-        return { std::min(left, other.left), std::min(top, other.top),
-                 std::max(right, other.right), std::max(bottom, other.bottom) };
+        return { std::min(left, other.left), std::min(top, other.top), std::max(right, other.right),
+                 std::max(bottom, other.bottom) };
     }
 };
 

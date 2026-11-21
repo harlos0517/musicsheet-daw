@@ -122,15 +122,8 @@ struct HiddenElement
     std::optional<std::string> part; // as in OffsetElement; default: all of it
 };
 
-using LayoutElement = std::variant<
-    BreakElement,
-    NoBreakElement,
-    StretchElement,
-    OffsetElement,
-    PlacementElement,
-    StemElement,
-    StaffGapElement,
-    HiddenElement>;
+using LayoutElement = std::variant<BreakElement, NoBreakElement, StretchElement, OffsetElement, PlacementElement,
+                                   StemElement, StaffGapElement, HiddenElement>;
 
 /** The full score, or one part. */
 struct Layout

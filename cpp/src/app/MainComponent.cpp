@@ -17,14 +17,16 @@ std::string_view binary(const char* data, int size) { return { data, static_cast
 
 std::unique_ptr<MusicFont> makeLeland()
 {
-    return std::make_unique<MusicFont>(BinaryData::Leland_otf, static_cast<std::size_t>(BinaryData::Leland_otfSize),
-                                       SmuflFont::parse(binary(BinaryData::leland_metadata_json, BinaryData::leland_metadata_jsonSize)),
-                                       SmuflGlyphNames::parse(binary(BinaryData::glyphnames_json, BinaryData::glyphnames_jsonSize)));
+    return std::make_unique<MusicFont>(
+        BinaryData::Leland_otf, static_cast<std::size_t>(BinaryData::Leland_otfSize),
+        SmuflFont::parse(binary(BinaryData::leland_metadata_json, BinaryData::leland_metadata_jsonSize)),
+        SmuflGlyphNames::parse(binary(BinaryData::glyphnames_json, BinaryData::glyphnames_jsonSize)));
 }
 
 LayoutProfile defaultProfile()
 {
-    return parseLayoutSetup(binary(BinaryData::default_layout_json, BinaryData::default_layout_jsonSize)).layoutProfiles.at(0);
+    return parseLayoutSetup(binary(BinaryData::default_layout_json, BinaryData::default_layout_jsonSize))
+        .layoutProfiles.at(0);
 }
 
 } // namespace
@@ -60,8 +62,8 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     viewport.setViewedComponent(&scoreView, false);
 
     for (juce::Component* c : std::initializer_list<juce::Component*> {
-             &openButton, &fileLabel, &staffBox, &firstLabel, &firstSlider, &countLabel, &countSlider,
-             &zoomLabel, &zoomSlider, &boundsToggle, &statusLabel, &viewport })
+             &openButton, &fileLabel, &staffBox, &firstLabel, &firstSlider, &countLabel, &countSlider, &zoomLabel,
+             &zoomSlider, &boundsToggle, &statusLabel, &viewport })
         addAndMakeVisible(c);
 
     setSize(1200, 420);
@@ -107,16 +109,11 @@ void MainComponent::resized()
         return juce::FlexItem(c).withWidth(width).withHeight(26).withMargin({ 0, 4, 0, 4 });
     };
     toolbar.items = {
-        item(openButton, 80),
-        item(fileLabel, 160).withFlex(1).withMinWidth(100),
-        item(staffBox, 220),
-        item(firstLabel, 44),
-        item(firstSlider, 100),
-        item(countLabel, 70),
-        item(countSlider, 92),
-        item(zoomLabel, 44),
-        item(zoomSlider, 140),
-        item(boundsToggle, 72),
+        item(openButton, 80),   item(fileLabel, 160).withFlex(1).withMinWidth(100),
+        item(staffBox, 220),    item(firstLabel, 44),
+        item(firstSlider, 100), item(countLabel, 70),
+        item(countSlider, 92),  item(zoomLabel, 44),
+        item(zoomSlider, 140),  item(boundsToggle, 72),
     };
     toolbar.performLayout(area.removeFromTop(40));
 
@@ -208,13 +205,18 @@ void MainComponent::relayout()
 
     try
     {
-        SystemLayout layout = layoutSystem({ .music = *music, .profile = profile, .font = font->metadata(),
-                                             .staffId = staffId, .firstMeasure = first, .measureCount = count,
+        SystemLayout layout = layoutSystem({ .music = *music,
+                                             .profile = profile,
+                                             .font = font->metadata(),
+                                             .staffId = staffId,
+                                             .firstMeasure = first,
+                                             .measureCount = count,
                                              .width = systemWidthSp() });
         const auto boxes = layout.boxes.size();
         scoreView.setSystem(std::move(layout));
         setStatus(juce::String::fromUTF8(music->title.c_str()) + ": measures " + juce::String(first + 1) + "-"
-                  + juce::String(first + count) + ", " + juce::String(boxes) + " boxes. Hover a symbol to see its node.");
+                  + juce::String(first + count) + ", " + juce::String(boxes)
+                  + " boxes. Hover a symbol to see its node.");
     }
     catch (const std::exception& e)
     {

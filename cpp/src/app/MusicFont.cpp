@@ -36,7 +36,8 @@ MusicFont::MusicFont(const void* fontData, std::size_t fontSize, SmuflFont metad
         if (const auto clefBox = smufl.bbox("gClef"))
         {
             const float height = outlineAtReferenceHeight(*clef).getBounds().getHeight() * spPerUnit;
-            if (std::abs(height - static_cast<float>(clefBox->height())) > 0.05f * static_cast<float>(clefBox->height()))
+            if (std::abs(height - static_cast<float>(clefBox->height()))
+                > 0.05f * static_cast<float>(clefBox->height()))
                 DBG("MusicFont: gClef outline is " << height << " sp tall, metadata says " << clefBox->height());
         }
 }
@@ -45,8 +46,8 @@ juce::Path MusicFont::outlineAtReferenceHeight(char32_t codepoint) const
 {
     juce::GlyphArrangement arrangement;
     arrangement.addLineOfText(juce::Font(juce::FontOptions {}.withTypeface(typeface).withHeight(referenceHeight)),
-                              juce::String::charToString(static_cast<juce::juce_wchar>(codepoint)),
-                              0.0f, 0.0f); // pen at the origin, on the baseline
+                              juce::String::charToString(static_cast<juce::juce_wchar>(codepoint)), 0.0f,
+                              0.0f); // pen at the origin, on the baseline
     juce::Path path;
     arrangement.createPath(path);
     return path;

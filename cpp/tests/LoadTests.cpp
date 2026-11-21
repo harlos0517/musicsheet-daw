@@ -119,9 +119,8 @@ TEST_CASE("load errors say where they are", "[load]")
     {
         std::string json = smallScore;
         json.replace(json.find(R"("kind": "rest")"), 14, R"("kind": "glissando")");
-        CHECK_THROWS_WITH(parseMusicData(json),
-            ContainsSubstring("tracks[0].staves[0].measures[0].voices[0].events[2]")
-                && ContainsSubstring("unknown kind \"glissando\""));
+        CHECK_THROWS_WITH(parseMusicData(json), ContainsSubstring("tracks[0].staves[0].measures[0].voices[0].events[2]")
+                                                    && ContainsSubstring("unknown kind \"glissando\""));
     }
 
     SECTION("unknown enum name")
@@ -129,7 +128,7 @@ TEST_CASE("load errors say where they are", "[load]")
         std::string json = smallScore;
         json.replace(json.find(R"("step": "g")"), 11, R"("step": "h")");
         CHECK_THROWS_WITH(parseMusicData(json),
-            ContainsSubstring("events[0].events[0].notes[0].pitch.step: unknown name \"h\""));
+                          ContainsSubstring("events[0].events[0].notes[0].pitch.step: unknown name \"h\""));
     }
 
     SECTION("missing field")
@@ -144,13 +143,10 @@ TEST_CASE("load errors say where they are", "[load]")
         std::string json = smallScore;
         json.replace(json.find(R"("tick": 0 })"), 9, R"("tick": 0.5)"); // the dynamic's anchor
         CHECK_THROWS_WITH(parseMusicData(json),
-            ContainsSubstring("attachments[0].at.tick: expected an integer, got 0.5"));
+                          ContainsSubstring("attachments[0].at.tick: expected an integer, got 0.5"));
     }
 
-    SECTION("not JSON")
-    {
-        CHECK_THROWS_WITH(parseMusicData("{ nope"), ContainsSubstring("invalid JSON"));
-    }
+    SECTION("not JSON") { CHECK_THROWS_WITH(parseMusicData("{ nope"), ContainsSubstring("invalid JSON")); }
 }
 
 TEST_CASE("the default layout setup loads", "[load][layout]")

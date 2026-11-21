@@ -66,8 +66,8 @@ struct PlacedEvent
 
 // Places events one after another from `start`. Inside tuplets, lengths are scaled by
 // num/den (2/3 for a triplet). Returns the events' unscaled total length.
-Tick placeEvents(const std::vector<VoiceEvent>& events, Tick start, Tick num, Tick den, int tpq,
-                 int voice, std::vector<PlacedEvent>& out)
+Tick placeEvents(const std::vector<VoiceEvent>& events, Tick start, Tick num, Tick den, int tpq, int voice,
+                 std::vector<PlacedEvent>& out)
 {
     Tick nominal = 0;
     for (const VoiceEvent& event : events)
@@ -86,7 +86,8 @@ Tick placeEvents(const std::vector<VoiceEvent>& events, Tick start, Tick num, Ti
                        [&](const Tuplet& tuplet) {
                            const Tick normal = tuplet.normal > 0 ? tuplet.normal : 1;
                            const Tick actual = tuplet.actual > 0 ? tuplet.actual : 1;
-                           const Tick inner = placeEvents(tuplet.events, at, num * normal, den * actual, tpq, voice, out);
+                           const Tick inner =
+                               placeEvents(tuplet.events, at, num * normal, den * actual, tpq, voice, out);
                            nominal += inner * normal / actual;
                        },
                    },
@@ -145,13 +146,20 @@ std::string kitNoteheadGlyph(Notehead notehead, DurationType type, const SmuflFo
     {
     case Notehead::Normal: return fallback;
     case Notehead::X:
-        return firstGlyph(font, { whole ? "noteheadXWhole" : half ? "noteheadXHalf" : "noteheadXBlack", "noteheadXBlack", fallback });
+        return firstGlyph(font, { whole  ? "noteheadXWhole"
+                                  : half ? "noteheadXHalf"
+                                         : "noteheadXBlack",
+                                  "noteheadXBlack", fallback });
     case Notehead::CircleX: return firstGlyph(font, { "noteheadCircleX", fallback });
     case Notehead::Triangle:
-        return firstGlyph(font, { whole ? "noteheadTriangleUpWhole" : half ? "noteheadTriangleUpHalf" : "noteheadTriangleUpBlack",
+        return firstGlyph(font, { whole  ? "noteheadTriangleUpWhole"
+                                  : half ? "noteheadTriangleUpHalf"
+                                         : "noteheadTriangleUpBlack",
                                   "noteheadTriangleUpBlack", fallback });
     case Notehead::Diamond:
-        return firstGlyph(font, { whole ? "noteheadDiamondWhole" : half ? "noteheadDiamondHalf" : "noteheadDiamondBlack",
+        return firstGlyph(font, { whole  ? "noteheadDiamondWhole"
+                                  : half ? "noteheadDiamondHalf"
+                                         : "noteheadDiamondBlack",
                                   "noteheadDiamondBlack", fallback });
     }
     return fallback;
@@ -167,18 +175,15 @@ std::string clefGlyph(const Clef& clef, const SmuflFont& font)
     case ClefType::C: base = "cClef"; break;
     case ClefType::Percussion: return "unpitchedPercussionClef1";
     }
-    const char* suffix = clef.octaveChange == -1 ? "8vb"
-                         : clef.octaveChange == 1 ? "8va"
+    const char* suffix = clef.octaveChange == -1   ? "8vb"
+                         : clef.octaveChange == 1  ? "8va"
                          : clef.octaveChange == -2 ? "15mb"
-                         : clef.octaveChange == 2 ? "15ma"
-                                                  : "";
+                         : clef.octaveChange == 2  ? "15ma"
+                                                   : "";
     return firstGlyph(font, { base + suffix, base });
 }
 
-std::string timeSigDigits(int value, const char* fallback)
-{
-    return value > 0 ? std::to_string(value) : fallback;
-}
+std::string timeSigDigits(int value, const char* fallback) { return value > 0 ? std::to_string(value) : fallback; }
 
 // ── Plans ──────────────────────────────────────────────────────────────────────
 
@@ -367,7 +372,8 @@ private:
                 && (!previousKey || previousKey->accidentals != measure.key->accidentals))
                 plan.key = measure.key;
             if (measure.timeSig
-                && (!previousTime || previousTime->beats != measure.timeSig->beats || previousTime->unit != measure.timeSig->unit))
+                && (!previousTime || previousTime->beats != measure.timeSig->beats
+                    || previousTime->unit != measure.timeSig->unit))
                 plan.time = measure.timeSig;
         }
 
@@ -441,15 +447,18 @@ private:
     {
         const double half = thickness / 2;
         const bool horizontal = std::abs(to.x - from.x) >= std::abs(to.y - from.y);
-        const Rect bounds { std::min(from.x, to.x) - (horizontal ? 0 : half), std::min(from.y, to.y) - (horizontal ? half : 0),
-                            std::max(from.x, to.x) + (horizontal ? 0 : half), std::max(from.y, to.y) + (horizontal ? half : 0) };
+        const Rect bounds { std::min(from.x, to.x) - (horizontal ? 0 : half),
+                            std::min(from.y, to.y) - (horizontal ? half : 0),
+                            std::max(from.x, to.x) + (horizontal ? 0 : half),
+                            std::max(from.y, to.y) + (horizontal ? half : 0) };
         out.boxes.push_back({ nodeId, part, bounds, LineShape { from, to, thickness } });
     }
 
     void emitStaffLines()
     {
         for (int i = 0; i < lines; ++i)
-            addLine(staff.id, Part::StaffLine, { 0, double(i) }, { out.width, double(i) }, engraving.staffLineThickness);
+            addLine(staff.id, Part::StaffLine, { 0, double(i) }, { out.width, double(i) },
+                    engraving.staffLineThickness);
     }
 
     double emitMeasure(const MeasurePlan& plan, double left, double factor)
@@ -485,7 +494,8 @@ private:
     void emitSignatures(const MeasurePlan& plan, double left)
     {
         if (plan.clef)
-            addGlyph(plan.clef->id, Part::Clef, clefGlyph(*plan.clef, font), { left + plan.clefX, clefY(*plan.clef, lines) });
+            addGlyph(plan.clef->id, Part::Clef, clefGlyph(*plan.clef, font),
+                     { left + plan.clefX, clefY(*plan.clef, lines) });
 
         if (plan.key)
         {
@@ -549,17 +559,17 @@ private:
                            },
                            [&](const UnpitchedNote& note) {
                                const KitEntry* entry = kitEntry(note.kitEntryId);
-                               heads.push_back({ &note.id,
-                                                 kitNoteheadGlyph(entry ? entry->notehead : Notehead::Normal, type, font),
-                                                 unpitchedY(entry ? entry->displayPitch : 0, lines) });
+                               heads.push_back(
+                                   { &note.id, kitNoteheadGlyph(entry ? entry->notehead : Notehead::Normal, type, font),
+                                     unpitchedY(entry ? entry->displayPitch : 0, lines) });
                            },
                        },
                        chordNote);
         if (heads.empty())
             return;
 
-        const auto [topIt, bottomIt] = std::minmax_element(heads.begin(), heads.end(),
-                                                           [](const Head& a, const Head& b) { return a.y < b.y; });
+        const auto [topIt, bottomIt] =
+            std::minmax_element(heads.begin(), heads.end(), [](const Head& a, const Head& b) { return a.y < b.y; });
         const Head& top = *topIt;
         const Head& bottom = *bottomIt;
 

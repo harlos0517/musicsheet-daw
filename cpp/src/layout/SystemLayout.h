@@ -27,8 +27,7 @@ namespace msd
 
 // Which piece of a node a box draws. Where LayoutSetup names a part (OffsetElement,
 // HiddenElement: 'accidental', 'stem', …), it refers to these.
-enum class Part
-{
+enum class Part {
     StaffLine,     // node: the staff
     LedgerLine,    // node: the chord
     Barline,       // node: the measure
