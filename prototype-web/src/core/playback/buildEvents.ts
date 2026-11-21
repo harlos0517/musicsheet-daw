@@ -618,6 +618,7 @@ const buildNotes = (
 
         const emit = (
           suffix: string, pitch: NoteEvent['pitch'], from: number, ticks: number, plain = false,
+          velocity = base.velocity,
         ) => {
           const kept = plain
             ? sounding.filter(id => !ROLL_TECHNIQUES.has(id) && !/^core:tremolo/.test(id))
@@ -626,6 +627,7 @@ const buildNotes = (
           if (phrase) phrases.set(`${note.id}@${playedMeasure.pass}${suffix}`, phrase)
           finish({
             ...base,
+            velocity,
             id: `${note.id}@${playedMeasure.pass}${suffix}`,
             sourceIds: chain.sourceIds,
             pitch,
@@ -664,9 +666,14 @@ const buildNotes = (
           }
           const count = Math.round(length / unit)
           if (count > 1) {
-            // Plain strokes: the patch is not asked to roll them.
-            for (let i = 0; i < count; i += 1)
-              emit(i === 0 ? '' : `~${i}`, pitchOf(note), start + i * unit, unit, true)
+            // Plain strokes: the patch is not asked to roll them. Each takes its velocity
+            // from the dynamics where it starts, so the strokes follow a hairpin.
+            for (let i = 0; i < count; i += 1) {
+              const from = start + i * unit
+              const velocity = i === 0 ? base.velocity
+                : clamp01(evaluateCurve(curves, 'dynamics', from, initialDynamics, scope))
+              emit(i === 0 ? '' : `~${i}`, pitchOf(note), from, unit, true, velocity)
+            }
 
             return
           }

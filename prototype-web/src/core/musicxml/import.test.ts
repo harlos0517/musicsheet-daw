@@ -657,6 +657,18 @@ describe('Symphony Series percussion', () => {
     expect(at(timpani.messages, 'keyswitch')).toEqual([[0, 36], [63 - lead, 38], [2000, 45]])
   })
 
+  it('gives each written-out tremolo note the dynamics where it starts', () => {
+    // A whole-note roll on the xylophone, p to f: the strokes get louder all the way.
+    const { noteOns } = playMini(mini('Xylophone',
+      `${direction('<dynamics><p/></dynamics>')}${wedge('crescendo')}
+       ${note('C', 5, 48, 'whole', roll)}${wedge('stop')}`,
+      `${direction('<dynamics><f/></dynamics>')}${note('C', 5, 12, 'quarter')}`))
+    const strokes = noteOns.slice(0, -1).map(m => m.data2)
+    expect(strokes.length).toBeGreaterThan(10)
+    strokes.slice(1).forEach((velocity, i) => expect(velocity).toBeGreaterThanOrEqual(strokes[i]!))
+    expect(strokes.at(-1)!).toBeGreaterThan(strokes[0]!)
+  })
+
   it('shapes percussion hairpins exponentially, the suspended cymbal\'s on an ease', () => {
     const shapes = (part: string) => playMini(mini(part,
       `${wedge('crescendo')}${hit('whole', 48, roll)}${wedge('stop')}`, hit('quarter', 12)))
