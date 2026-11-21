@@ -152,8 +152,9 @@ TEST_CASE("load errors say where they are", "[load]")
 TEST_CASE("the default layout setup loads", "[load][layout]")
 {
     const LayoutSetup setup = loadLayoutSetup(std::filesystem::path(MSD_RESOURCES_DIR) / "default.layout.json");
-    REQUIRE(setup.layoutProfiles.size() == 1);
+    REQUIRE(setup.layoutProfiles.size() == 2); // default, large-score
     const LayoutProfile& profile = setup.layoutProfiles[0];
+    CHECK(profile.id == "default");
     CHECK(profile.fonts.music == "Leland");
     CHECK(profile.spacing.durationRatio == 1.4);
     CHECK(profile.placement.at(PlacedKind::Dynamic) == Side::Below);

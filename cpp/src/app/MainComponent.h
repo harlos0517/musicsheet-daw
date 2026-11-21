@@ -36,6 +36,10 @@ private:
     void setStatus(const juce::String& text);
     const LayoutProfile& profile() const; // the layout's, or the first one
 
+    // Profile IDs in resources/default.layout.json.
+    static constexpr const char* defaultProfileId = "default";
+    static constexpr const char* largeScoreProfileId = "large-score"; // 1 mm staves
+
     // Declared before scoreView, which keeps a reference to it.
     std::unique_ptr<MusicFont> font;
     LayoutSetup setup; // the default profile and the full-score layout, with its flow

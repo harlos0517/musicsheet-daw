@@ -520,6 +520,32 @@ TEST_CASE("a layout shows only its own tracks", "[pages]")
     CHECK(flow.pages.at(0).systems.at(0).staffYSp.size() == 1);
 }
 
+TEST_CASE("large scores get 1 mm staves on A4", "[pages]")
+{
+    const LayoutSetup setup = loadLayoutSetup(std::filesystem::path(MSD_RESOURCES_DIR) / "default.layout.json");
+    REQUIRE(setup.layoutProfiles.size() == 2);
+    const LayoutProfile& large = setup.layoutProfiles[1];
+    CHECK(large.id == "large-score");
+    CHECK(large.staffSpaceMm == 1.0);
+    CHECK(large.page.widthMm == 210);
+    CHECK(large.page.heightMm == 297);
+
+    // A system's height: staves, and the distances between them.
+    const MusicData quartet =
+        score({ { "fl", { { "fl1" } } }, { "pno", { { "rh" }, { "lh", {}, R"("type": "f", "line": 4)" } } } }, 1);
+    const LayoutProfile::Distances& d = defaultProfile().distances;
+    CHECK(systemHeightSp(quartet, fullScore(), defaultProfile()) == Approx(3 * 4 + d.trackSp + d.staffSp));
+    CHECK(systemFitsPage(quartet, fullScore(), defaultProfile()));
+
+    // 20 one-staff instruments: too tall for the default's 1.75 mm staves, not for 1 mm.
+    std::vector<TrackSpec> tracks;
+    for (int i = 0; i < 20; ++i)
+        tracks.push_back({ "t" + std::to_string(i), { { "s" + std::to_string(i) } } });
+    const MusicData twenty = score(tracks, 1);
+    CHECK_FALSE(systemFitsPage(twenty, fullScore(), defaultProfile()));
+    CHECK(systemFitsPage(twenty, fullScore(), large));
+}
+
 // Reflows every exported score and lays out all its pages.
 TEST_CASE("every exported score lays out on pages", "[.][exported]")
 {

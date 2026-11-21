@@ -155,8 +155,22 @@ void MainComponent::openScore(const juce::File& file)
     }
     fileLabel.setText(file.getFileName(), juce::dontSendNotification);
 
+    // Large scores use smaller staves: the default profile, unless one of its systems
+    // would be taller than the page.
+    Layout& layout = setup.layouts.at(0);
+    layout.layoutProfileId = defaultProfileId;
+    try
+    {
+        if (!systemFitsPage(*music, layout, profile()))
+            layout.layoutProfileId = largeScoreProfileId;
+    }
+    catch (const std::exception&)
+    {
+        // A profile without a staff size: reflow reports it.
+    }
+
     // A new score has no flow yet: the first layout reflows.
-    setup.layouts.at(0).flow.reset();
+    layout.flow.reset();
     reflowScore();
     relayout();
     viewport.setViewPosition(0, 0);

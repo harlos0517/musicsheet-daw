@@ -51,6 +51,15 @@ struct PageLayout
 // track.
 std::vector<NodeId> layoutStaffIds(const MusicData& music, const Layout& layout);
 
+// The height of a system with every staff the layout shows, at the profile's
+// distances, without the user's staff gaps: from the first staff's top line to the last
+// one's bottom line, in sp.
+double systemHeightSp(const MusicData& music, const Layout& layout, const LayoutProfile& profile);
+
+// Whether such a system fits the profile's page. Throws std::invalid_argument when the
+// profile has no staff size.
+bool systemFitsPage(const MusicData& music, const Layout& layout, const LayoutProfile& profile);
+
 // Breaks the music into systems and pages, and places each system and staff.
 //  - Systems: measures are added while their natural widths fit the page's width (less
 //    the first system's indent), so a fresh reflow never squeezes. A measure wider

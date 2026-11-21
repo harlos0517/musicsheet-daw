@@ -183,6 +183,17 @@ std::vector<NodeId> layoutStaffIds(const MusicData& music, const Layout& layout)
     return ids;
 }
 
+double systemHeightSp(const MusicData& music, const Layout& layout, const LayoutProfile& profile)
+{
+    std::map<NodeId, double> staffYs;
+    return placeStaves(staffEntries(music, layout), profile.distances, {}, 0, staffYs);
+}
+
+bool systemFitsPage(const MusicData& music, const Layout& layout, const LayoutProfile& profile)
+{
+    return systemHeightSp(music, layout, profile) <= pageGeometry(profile).contentHeight;
+}
+
 Flow reflow(const ScoreInput& in)
 {
     const PageGeometry page = pageGeometry(in.profile);
