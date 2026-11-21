@@ -1,0 +1,45 @@
+{
+  "layoutProfiles": [
+    {
+      "id": "default",
+      "name": "Default",
+      "page": {
+        "widthMm": 210,
+        "heightMm": 297,
+        "margins": { "top": 15, "bottom": 15, "left": 15, "right": 15 }
+      },
+      "staffSpaceMm": 1.75,
+      "spacing": {
+        "quarterSp": 3.5,
+        "durationRatio": 1.4,
+        "minNoteSp": 1.6,
+        "measurePaddingSp": 1.2
+      },
+      "distances": {
+        "staffSp": 6.5,
+        "trackSp": 8,
+        "systemSp": 10,
+        "firstIndentSp": 10
+      },
+      "breaking": { "lastSystemFillMin": 0.75 },
+      "placement": {
+        "dynamic": "below",
+        "hairpin": "below",
+        "pedal": "below",
+        "tempo": "above",
+        "text": "above",
+        "technique": "above"
+      },
+      "fonts": { "music": "Leland", "text": "Edwin" },
+      "padding": { "collisionSp": 0.3 }
+    }
+  ],
+  "layouts": [
+    {
+      "id": "score",
+      "name": "Full score",
+      "layoutProfileId": "default",
+      "elements": []
+    }
+  ]
+}

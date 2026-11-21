@@ -2,6 +2,7 @@
 #
 #   .\build.ps1                  # debug build
 #   .\build.ps1 -Run             # debug build, then start the app
+#   .\build.ps1 -Test            # debug build, then run the unit tests
 #   .\build.ps1 release
 #   .\build.ps1 -Fresh           # throw away the CMake cache first
 #
@@ -13,7 +14,8 @@ param(
     [ValidateSet('debug', 'release')]
     [string]$Preset = 'debug',
     [switch]$Fresh,
-    [switch]$Run
+    [switch]$Run,
+    [switch]$Test
 )
 
 # Not 'Stop': in Windows PowerShell 5.1 that turns cmake's stderr warnings into
@@ -56,6 +58,11 @@ try {
     $config = if ($Preset -eq 'debug') { 'Debug' } else { 'Release' }
     $exe = Join-Path $PSScriptRoot "build\$Preset\src\app\MusicsheetDawApp_artefacts\$config\Musicsheet DAW.exe"
     Write-Host "Built: $exe"
+
+    if ($Test) {
+        ctest --preset $Preset
+        if ($LASTEXITCODE -ne 0) { throw "Tests failed ($LASTEXITCODE)." }
+    }
 
     if ($Run) { Start-Process $exe }
 }

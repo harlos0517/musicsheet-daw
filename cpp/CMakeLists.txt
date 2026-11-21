@@ -27,6 +27,14 @@ else()
 endif()
 option(MSD_ENABLE_INSPECTOR "Link melatonin inspector (Ctrl+I toggles it)" ${_msd_inspector_default})
 
+option(MSD_BUILD_TESTS "Build the unit tests" ON)
+
 include(cmake/Dependencies.cmake)
 
+add_subdirectory(src/core)
 add_subdirectory(src/app)
+
+if(MSD_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

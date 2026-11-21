@@ -12,6 +12,7 @@ From any PowerShell, including the VS Code terminal:
 ```powershell
 cpp\build.ps1              # debug
 cpp\build.ps1 -Run         # debug, then start the app
+cpp\build.ps1 -Test        # debug, then run the unit tests
 cpp\build.ps1 release
 cpp\build.ps1 -Fresh       # discard the CMake cache first
 ```
@@ -50,6 +51,43 @@ Fetched dependencies are shared between presets in `build/_deps`.
 `MSD_ENABLE_INSPECTOR` is on (default: on for Debug, off otherwise); in the app,
 **Ctrl+I** opens it.
 
+## Layout
+
+```
+cpp/
+├── build.ps1, CMakeLists.txt, CMakePresets.json, cmake/Dependencies.cmake
+├── resources/default.layout.json   a LayoutSetup with one profile, for now
+├── src/
+│   ├── core/                       library msd_core: no JUCE, testable without a window
+│   │   ├── types/                  MusicData.h, LayoutProfile.h, LayoutSetup.h
+│   │   └── json/                   Load.h/.cpp (JSON → types), EnumNames.h
+│   └── app/                        the JUCE window
+└── tests/                          Catch2 unit tests (msd_tests)
+```
+
+## Types from TS
+
+`src/core/types/*.h` mirror `prototype-web/src/core/types/*.ts`: same names, same
+fields in the same order. The comment at the top of `MusicData.h` explains how each
+TS shape maps to C++.
+
+Changing a type means changing it in TS and in three places here:
+
+1. the struct in `src/core/types/`
+2. its `read()` in `src/core/json/Load.cpp` (one `field(...)` line per member;
+   a new struct also needs its `read()` declared at the top of that file)
+3. for a new enum, its names in `src/core/json/EnumNames.h` and in the list in
+   `tests/EnumNamesTests.cpp`
+
+The loader reads the files `pnpm midi` writes (`prototype-web/midi-out/*.music.json`).
+To check they all load:
+
+```powershell
+cpp\build\debug\tests\msd_tests.exe "[exported]"
+```
+
+In Debug this takes about 30 s for all 9 scores; in Release it takes about 2 s.
+
 ## Licensing
 
 | Component | License | Notes |
@@ -57,6 +95,8 @@ Fetched dependencies are shared between presets in `build/_deps`.
 | Our code | GPLv3 | |
 | JUCE 8 | AGPLv3 or commercial | **Decision needed**, see below |
 | melatonin_inspector | MIT | Debug builds only |
+| nlohmann/json | MIT | |
+| Catch2 | BSL-1.0 | Tests only, not shipped |
 | Leland (planned) | SIL OFL 1.1 | Ship its license file with the font |
 
 GPLv3 §13 allows linking with AGPLv3 code, but the combined binary then carries

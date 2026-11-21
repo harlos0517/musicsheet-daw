@@ -1,0 +1,18 @@
+add_executable(msd_tests
+    EnumNamesTests.cpp
+    LoadTests.cpp)
+
+target_link_libraries(msd_tests PRIVATE msd_core Catch2::Catch2WithMain)
+
+target_compile_definitions(msd_tests PRIVATE
+    MSD_RESOURCES_DIR="${PROJECT_SOURCE_DIR}/resources"
+    MSD_EXPORTED_SCORES_DIR="${PROJECT_SOURCE_DIR}/../prototype-web/midi-out")
+
+if(MSVC)
+    target_compile_options(msd_tests PRIVATE /W4 /permissive-)
+endif()
+
+# Registers every TEST_CASE with CTest, so `ctest` runs them one by one.
+list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+include(Catch)
+catch_discover_tests(msd_tests)
