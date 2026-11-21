@@ -1,7 +1,7 @@
 #pragma once
 
-// Reads the JSON written by the TS side (`pnpm midi` → prototype-web/midi-out/*.music.json)
-// into the C++ types.
+// Reads the JSON written by the TS side into the C++ types: `pnpm midi` writes
+// prototype-web/midi-out/*.music.json, *.setup.json and *.events.json.
 //
 // Strict about what it knows: a missing required field, a wrong type, an unknown
 // `kind` or enum name is an error that says where it is, e.g.
@@ -12,9 +12,12 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string_view>
+#include <vector>
 
 #include "core/types/LayoutSetup.h"
 #include "core/types/MusicData.h"
+#include "core/types/MusicEvent.h"
+#include "core/types/PlaybackSetup.h"
 
 namespace msd
 {
@@ -31,5 +34,12 @@ MusicData loadMusicData(const std::filesystem::path& file);
 
 LayoutSetup parseLayoutSetup(std::string_view json);
 LayoutSetup loadLayoutSetup(const std::filesystem::path& file);
+
+PlaybackSetup parsePlaybackSetup(std::string_view json);
+PlaybackSetup loadPlaybackSetup(const std::filesystem::path& file);
+
+// A JSON array of note and curve events, as in *.events.json.
+std::vector<MusicEvent> parseMusicEvents(std::string_view json);
+std::vector<MusicEvent> loadMusicEvents(const std::filesystem::path& file);
 
 } // namespace msd

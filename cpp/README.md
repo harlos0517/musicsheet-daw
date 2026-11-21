@@ -75,7 +75,9 @@ cpp/
 ├── resources/default.layout.json   LayoutSetup: profiles "default" and "large-score", one layout
 ├── src/
 │   ├── core/                       library msd_core: no JUCE, testable without a window
-│   │   ├── types/                  MusicData.h, LayoutProfile.h, LayoutSetup.h
+│   │   ├── types/                  MusicData.h, LayoutProfile.h, LayoutSetup.h, and for playback
+│   │   │                           PlaybackSetup.h, InterpretationProfile.h, InstrumentProfile.h,
+│   │   │                           MusicEvent.h, EventOverride.h
 │   │   └── json/                   Load.h/.cpp (JSON → types), EnumNames.h
 │   ├── layout/                     library msd_layout: MusicData → boxes, no JUCE either
 │   │   ├── PageLayout.h            reflow() → Layout.flow, layoutPages()
@@ -100,8 +102,9 @@ Changing a type means changing it in TS and in three places here:
 3. for a new enum, its names in `src/core/json/EnumNames.h` and in the list in
    `tests/EnumNamesTests.cpp`
 
-The loader reads the files `pnpm midi` writes (`prototype-web/midi-out/*.music.json`).
-To check they all load:
+The loader reads the files `pnpm midi` writes into `prototype-web/midi-out/`: the
+scores (`*.music.json`), the playback setups they were played with (`*.setup.json`)
+and the events playback made from them (`*.events.json`). To check they all load:
 
 ```powershell
 cpp\build\debug\tests\msd_tests.exe "[exported]"

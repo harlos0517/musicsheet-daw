@@ -13,9 +13,12 @@
 #include <string_view>
 #include <utility>
 
+#include "core/types/InstrumentProfile.h"
+#include "core/types/InterpretationProfile.h"
 #include "core/types/LayoutProfile.h"
 #include "core/types/LayoutSetup.h"
 #include "core/types/MusicData.h"
+#include "core/types/MusicEvent.h"
 
 namespace msd
 {
@@ -168,6 +171,58 @@ MSD_ENUM_NAMES(BreakType,
 MSD_ENUM_NAMES(StemDirection,
     { StemDirection::Up, "up" },
     { StemDirection::Down, "down" })
+
+// ── Playback ───────────────────────────────────────────────────────────────────
+
+MSD_ENUM_NAMES(CurveType,
+    { CurveType::Hold, "hold" },
+    { CurveType::Linear, "linear" },
+    { CurveType::Exp, "exp" },
+    { CurveType::Power, "power" },
+    { CurveType::Ease, "ease" })
+
+MSD_ENUM_NAMES(SlurPosition,
+    { SlurPosition::First, "first" },
+    { SlurPosition::Inner, "inner" },
+    { SlurPosition::Last, "last" })
+
+MSD_ENUM_NAMES(CurveCombine,
+    { CurveCombine::Add, "add" },
+    { CurveCombine::Replace, "replace" },
+    { CurveCombine::Scale, "scale" })
+
+MSD_ENUM_NAMES(BuiltInCurveParameter,
+    { BuiltInCurveParameter::Dynamics, "dynamics" },
+    { BuiltInCurveParameter::Sustain, "sustain" },
+    { BuiltInCurveParameter::Sostenuto, "sostenuto" },
+    { BuiltInCurveParameter::UnaCorda, "una-corda" })
+
+MSD_ENUM_NAMES(ChangeMode,
+    { ChangeMode::Set, "set" },
+    { ChangeMode::Add, "add" },
+    { ChangeMode::Scale, "scale" })
+
+MSD_ENUM_NAMES(Phrasing,
+    { Phrasing::Detached, "detached" },
+    { Phrasing::Connected, "connected" })
+
+MSD_ENUM_NAMES(BeatPlacement,
+    { BeatPlacement::BeforeBeat, "before-beat" },
+    { BeatPlacement::OnBeat, "on-beat" })
+
+MSD_ENUM_NAMES(DynamicCombine,
+    { DynamicCombine::Add, "add" },
+    { DynamicCombine::Replace, "replace" })
+
+MSD_ENUM_NAMES(DurationOp,
+    { DurationOp::Add, "add" },
+    { DurationOp::Scale, "scale" },
+    { DurationOp::SetQn, "setQn" },
+    { DurationOp::SetRatio, "setRatio" })
+
+MSD_ENUM_NAMES(ChannelMode,
+    { ChannelMode::Replace, "replace" },
+    { ChannelMode::Add, "add" })
 
 // clang-format on
 

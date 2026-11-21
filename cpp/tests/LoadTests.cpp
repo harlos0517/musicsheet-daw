@@ -180,6 +180,151 @@ TEST_CASE("layout elements load by kind", "[load][layout]")
     CHECK(layout.flow->pages.at(0).systems.at(0).staffYSp.at("s2") == 12.5);
 }
 
+TEST_CASE("a playback setup loads, each union by its tag", "[load][playback]")
+{
+    const PlaybackSetup setup = parsePlaybackSetup(R"({
+      "techniques": [{ "id": "core:pizz", "group": "bowing" }],
+      "interpretationProfiles": [{
+        "id": "default", "name": "Default", "defaultPhrasing": "connected",
+        "dynamics": [{ "type": "sfz", "mode": "add", "combine": "add", "value": 0.3,
+          "then": { "afterQn": 0.5, "mode": "add", "value": 0, "curveType": "linear" } }],
+        "noteRules": [{ "id": "short", "match": { "kind": "articulation", "type": "staccato" },
+          "when": { "maxNotatedQn": 1, "hairpin": "dim" },
+          "actions": [
+            { "op": "scale", "for": "duration", "value": 0.5 },
+            { "op": "scale", "for": "velocity", "value": 1.1 },
+            { "op": "setRatio", "for": "duration", "value": 0.9 },
+            { "op": "addTechnique", "techniqueId": "core:short" },
+            { "op": "rollAttack", "together": false, "qn": 0.25 }
+          ] }],
+        "curveRules": [{ "id": "ped", "match": { "kind": "pedal", "type": "sostenuto" },
+          "parameter": { "kind": "custom", "name": "brightness" },
+          "points": [{ "time": 0, "value": 1 }] }]
+      }],
+      "instrumentProfiles": [{
+        "id": "kit", "name": "Kit", "trackDelayMs": -60, "defaultChannel": 10,
+        "velocity": { "mapping": { "low": 10, "high": 127, "curve": { "curveType": "ease", "steepness": 1 } } },
+        "techniqueMappings": [{
+          "matches": [{ "kind": "curve", "parameter": "dynamics", "min": 0, "max": 0.5 },
+                      { "kind": "slur", "position": "inner" }],
+          "cc": [{ "number": 1, "value": 64 },
+                 { "number": 2, "value": { "shortMs": 100, "longMs": 400, "atShort": 0, "atLong": 127 } }],
+          "durationMs": { "mode": "set", "value": 120 } }],
+        "curveMappings": [{ "parameter": "sustain", "defaultValue": 0,
+          "cc": [{ "number": 64, "mapping": { "low": 0, "high": 127 } }] }],
+        "kit": { "snare": [38, 40], "kick": 36 }
+      }],
+      "trackProfiles": { "t1": { "interpretationProfileId": "default",
+        "outputs": [{ "id": "main", "instrumentProfileId": "kit", "sounds": { "low-tom": "tom-4" } }] } },
+      "overrides": [
+        { "kind": "note-event-override", "id": "o1", "sourceId": "n1", "pitch": { "sound": "rim" },
+          "techniques": { "add": ["core:accent"] } },
+        { "kind": "curve-event-override", "id": "o2", "sourceId": "d1", "segmentIndex": 1,
+          "toValue": { "mode": "scale", "value": 0.8 } }
+      ]
+    })");
+
+    CHECK(setup.techniques.at(0).group == "bowing");
+
+    const InterpretationProfile& interpretation = setup.interpretationProfiles.at(0);
+    CHECK(interpretation.defaultPhrasing == Phrasing::Connected);
+    CHECK(interpretation.dynamics->at(0).then->afterQn == 0.5);
+    const NoteRule& rule = interpretation.noteRules.at(0);
+    CHECK(std::get<ArticulationMatch>(rule.match).type == ArticulationType::Staccato);
+    CHECK(rule.when->hairpin == HairpinType::Dim);
+    REQUIRE(rule.actions.size() == 5);
+    CHECK(std::get<DurationAction>(rule.actions[0]).op == DurationOp::Scale);
+    CHECK(std::get<VelocityAction>(rule.actions[1]).op == ChangeMode::Scale);
+    CHECK(std::get<DurationAction>(rule.actions[2]).op == DurationOp::SetRatio);
+    CHECK(std::get<AddTechniqueAction>(rule.actions[3]).techniqueId == "core:short");
+    CHECK(std::get<RollAttackAction>(rule.actions[4]).qn == 0.25);
+    const CurveRule& curveRule = interpretation.curveRules.at(0);
+    CHECK(std::get<PedalMatch>(curveRule.match).type == PedalType::Sostenuto);
+    CHECK(curveRule.parameter == CurveParameter { CustomCurveParameter { "brightness" } });
+
+    const InstrumentProfile& instrument = setup.instrumentProfiles.at(0);
+    CHECK(std::get<MappedVelocity>(instrument.velocity).mapping.low == 10);
+    const TechniqueMapping& mapping = instrument.techniqueMappings.at(0);
+    CHECK(std::get<CurveRangeMatch>(mapping.matches.at(0)).max == 0.5);
+    CHECK(std::get<SlurMatch>(mapping.matches.at(1)).position == SlurPosition::Inner);
+    CHECK(std::get<int>(mapping.cc->at(0).value) == 64);
+    CHECK(std::get<ByDuration>(mapping.cc->at(1).value).longMs == 400);
+    CHECK(instrument.curveMappings.at(0).parameter == CurveParameter { BuiltInCurveParameter::Sustain });
+    CHECK(std::get<std::vector<int>>(instrument.kit->at("snare")) == std::vector { 38, 40 });
+    CHECK(std::get<int>(instrument.kit->at("kick")) == 36);
+
+    CHECK(setup.trackProfiles.at("t1").outputs.at(0).sounds->at("low-tom") == "tom-4");
+    CHECK(std::get<KitSound>(*std::get<NoteEventOverride>(setup.overrides.at(0)).pitch).sound == "rim");
+    CHECK(std::get<CurveEventOverride>(setup.overrides.at(1)).toValue->mode == ChangeMode::Scale);
+}
+
+TEST_CASE("music events load", "[load][playback]")
+{
+    const std::vector<MusicEvent> events = parseMusicEvents(R"([
+      { "kind": "note-event", "id": "n1@1", "sourceIds": ["n1"], "trackId": "t1", "staffId": "s1",
+        "voiceIndex": 0, "pass": 1, "pitch": { "sound": "snare" }, "startTick": 0, "notatedTicks": 480,
+        "durationTicks": 432.5, "velocity": 0.5, "techniques": ["core:accent"], "slur": "first" },
+      { "kind": "curve-event", "id": "d1@1#0", "sourceIds": ["d1"], "trackId": "t1", "pass": 1,
+        "segmentIndex": 0, "parameter": "dynamics", "combine": "scale", "startTick": 0,
+        "durationTicks": 960, "fromValue": 0.5, "toValue": 0.7, "curveType": "exp", "steepness": 2 }
+    ])");
+    REQUIRE(events.size() == 2);
+    const auto& note = std::get<NoteEvent>(events[0]);
+    CHECK(std::get<KitSound>(note.pitch).sound == "snare");
+    CHECK(note.durationTicks == 432.5);
+    CHECK(note.slur == SlurPosition::First);
+    const auto& curve = std::get<CurveEvent>(events[1]);
+    CHECK(curve.combine == CurveCombine::Scale);
+    CHECK(curve.curveType == CurveType::Exp);
+}
+
+TEST_CASE("playback load errors say where they are", "[load][playback]")
+{
+    const auto profileWith = [](std::string_view action) {
+        return R"({ "techniques": [], "instrumentProfiles": [], "trackProfiles": {}, "overrides": [],
+          "interpretationProfiles": [{ "id": "p", "name": "P", "curveRules": [],
+            "noteRules": [{ "id": "r", "match": { "kind": "any" }, "actions": [)"
+               + std::string(action) + "] }] }] }";
+    };
+    CHECK_THROWS_WITH(parsePlaybackSetup(profileWith(R"({ "op": "setQn", "for": "velocity", "value": 1 })")),
+                      ContainsSubstring("noteRules[0].actions[0].op: unknown name \"setQn\""));
+    CHECK_THROWS_WITH(parsePlaybackSetup(profileWith(R"({ "op": "scale", "value": 1 })")),
+                      ContainsSubstring("actions[0]: missing string field \"for\""));
+}
+
+// Loads every setup and event list `pnpm midi` wrote. Run with: msd_tests "[exported]"
+TEST_CASE("every exported setup and event list loads", "[.][exported]")
+{
+    const std::filesystem::path folder = MSD_EXPORTED_SCORES_DIR;
+    if (!std::filesystem::exists(folder))
+        SKIP("no " << folder.string() << "; run pnpm midi in prototype-web first");
+
+    int setups = 0;
+    int eventLists = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(folder))
+    {
+        const std::string name = entry.path().filename().string();
+        INFO(name);
+        if (name.ends_with(".setup.json"))
+        {
+            PlaybackSetup setup;
+            REQUIRE_NOTHROW(setup = loadPlaybackSetup(entry.path()));
+            CHECK_FALSE(setup.instrumentProfiles.empty());
+            CHECK_FALSE(setup.trackProfiles.empty());
+            ++setups;
+        }
+        else if (name.ends_with(".events.json"))
+        {
+            std::vector<MusicEvent> events;
+            REQUIRE_NOTHROW(events = loadMusicEvents(entry.path()));
+            CHECK_FALSE(events.empty());
+            ++eventLists;
+        }
+    }
+    CHECK(setups > 0);
+    CHECK(eventLists > 0);
+}
+
 // Loads every score `pnpm midi` wrote. Hidden by default ([.]) because the big
 // scores take a while in a Debug build. Run with: msd_tests "[exported]"
 TEST_CASE("every exported score loads", "[.][exported]")

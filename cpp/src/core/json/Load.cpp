@@ -100,7 +100,8 @@ template <NamedEnum E>
 void read(const Json&, const Path&, E&);
 template <class T>
 void read(const Json&, const Path&, std::vector<T>&);
-void read(const Json&, const Path&, std::map<NodeId, double>&);
+template <class T>
+void read(const Json&, const Path&, std::map<std::string, T>&);
 void read(const Json&, const Path&, std::map<PlacedKind, Side>&);
 
 void read(const Json&, const Path&, Duration&);
@@ -166,6 +167,65 @@ void read(const Json&, const Path&, Flow&);
 void read(const Json&, const Path&, LayoutElement&);
 void read(const Json&, const Path&, Layout&);
 void read(const Json&, const Path&, LayoutSetup&);
+
+void read(const Json&, const Path&, CurveParameter&);
+void read(const Json&, const Path&, KitSound&);
+void read(const Json&, const Path&, EventPitch&);
+void read(const Json&, const Path&, NoteEvent&);
+void read(const Json&, const Path&, CurveTarget&);
+void read(const Json&, const Path&, CurveEvent&);
+void read(const Json&, const Path&, MusicEvent&);
+
+void read(const Json&, const Path&, ValueChange&);
+void read(const Json&, const Path&, CurveShape&);
+void read(const Json&, const Path&, DynamicFollowUp&);
+void read(const Json&, const Path&, DynamicMapping&);
+void read(const Json&, const Path&, ArticulationMatch&);
+void read(const Json&, const Path&, TechniqueMatch&);
+void read(const Json&, const Path&, SlurRuleMatch&);
+void read(const Json&, const Path&, GraceMatch&);
+void read(const Json&, const Path&, DynamicMatch&);
+void read(const Json&, const Path&, AnyMatch&);
+void read(const Json&, const Path&, NoteRuleMatch&);
+void read(const Json&, const Path&, NoteRuleCondition&);
+void read(const Json&, const Path&, NoteRuleAction&);
+void read(const Json&, const Path&, NoteRule&);
+void read(const Json&, const Path&, PedalMatch&);
+void read(const Json&, const Path&, CurveRuleMatch&);
+void read(const Json&, const Path&, CurvePoint&);
+void read(const Json&, const Path&, CurveRule&);
+void read(const Json&, const Path&, SwellSettings&);
+void read(const Json&, const Path&, HairpinSettings&);
+void read(const Json&, const Path&, TremoloExpansion&);
+void read(const Json&, const Path&, GraceNoteTiming&);
+void read(const Json&, const Path&, GraceNoteSettings&);
+void read(const Json&, const Path&, InterpretationProfile&);
+
+void read(const Json&, const Path&, OutputRange&);
+void read(const Json&, const Path&, Keyswitch&);
+void read(const Json&, const Path&, KeyswitchRange&);
+void read(const Json&, const Path&, ByDuration&);
+void read(const Json&, const Path&, CurveRangeMatch&);
+void read(const Json&, const Path&, SlurMatch&);
+void read(const Json&, const Path&, NoteMatch&);
+void read(const Json&, const Path&, std::variant<int, ByDuration>&);
+void read(const Json&, const Path&, TechniqueCc&);
+void read(const Json&, const Path&, TechniqueMapping&);
+void read(const Json&, const Path&, CurveCc&);
+void read(const Json&, const Path&, CurveMapping&);
+void read(const Json&, const Path&, std::variant<FixedVelocity, MappedVelocity>&);
+void read(const Json&, const Path&, DampKeyswitch&);
+void read(const Json&, const Path&, std::variant<int, std::vector<int>>&);
+void read(const Json&, const Path&, InstrumentProfile&);
+
+void read(const Json&, const Path&, TechniqueChanges&);
+void read(const Json&, const Path&, NoteEventOverride&);
+void read(const Json&, const Path&, CurveEventOverride&);
+void read(const Json&, const Path&, MusicEventOverride&);
+void read(const Json&, const Path&, TechniqueDefinition&);
+void read(const Json&, const Path&, TrackOutput&);
+void read(const Json&, const Path&, TrackPlayback&);
+void read(const Json&, const Path&, PlaybackSetup&);
 
 // ── Fields ─────────────────────────────────────────────────────────────────────
 
@@ -269,7 +329,9 @@ void read(const Json& j, const Path& p, std::vector<T>& out)
         read(j[i], at(p, i), out[i]);
 }
 
-void read(const Json& j, const Path& p, std::map<NodeId, double>& out)
+// TS Record<string, T>: an object whose keys are free.
+template <class T>
+void read(const Json& j, const Path& p, std::map<std::string, T>& out)
 {
     expectObject(j, p);
     out.clear();
@@ -964,6 +1026,577 @@ void read(const Json& j, const Path& p, LayoutSetup& out)
     field(j, p, "layouts", out.layouts);
 }
 
+// ── Music events ───────────────────────────────────────────────────────────────
+
+void read(const Json& j, const Path& p, CurveParameter& out)
+{
+    if (j.is_string())
+    {
+        readAs<BuiltInCurveParameter>(j, p, out);
+        return;
+    }
+    expectKind(j, p, "custom");
+    field(j, p, "name", out.emplace<CustomCurveParameter>().name);
+}
+
+void read(const Json& j, const Path& p, KitSound& out)
+{
+    expectObject(j, p);
+    field(j, p, "sound", out.sound);
+}
+
+void read(const Json& j, const Path& p, EventPitch& out)
+{
+    if (j.is_number())
+        readAs<int>(j, p, out);
+    else
+        readAs<KitSound>(j, p, out);
+}
+
+void read(const Json& j, const Path& p, NoteEvent& out)
+{
+    expectKind(j, p, "note-event");
+    field(j, p, "id", out.id);
+    field(j, p, "sourceIds", out.sourceIds);
+    field(j, p, "trackId", out.trackId);
+    field(j, p, "staffId", out.staffId);
+    field(j, p, "voiceIndex", out.voiceIndex);
+    field(j, p, "pass", out.pass);
+    field(j, p, "pitch", out.pitch);
+    field(j, p, "startTick", out.startTick);
+    field(j, p, "notatedTicks", out.notatedTicks);
+    field(j, p, "durationTicks", out.durationTicks);
+    field(j, p, "velocity", out.velocity);
+    field(j, p, "techniques", out.techniques);
+    field(j, p, "startOffsetMs", out.startOffsetMs);
+    field(j, p, "slur", out.slur);
+}
+
+void read(const Json& j, const Path& p, CurveTarget& out)
+{
+    expectObject(j, p);
+    field(j, p, "staffId", out.staffId);
+    field(j, p, "voiceIndex", out.voiceIndex);
+}
+
+void read(const Json& j, const Path& p, CurveEvent& out)
+{
+    expectKind(j, p, "curve-event");
+    field(j, p, "id", out.id);
+    field(j, p, "sourceIds", out.sourceIds);
+    field(j, p, "trackId", out.trackId);
+    field(j, p, "pass", out.pass);
+    field(j, p, "segmentIndex", out.segmentIndex);
+    field(j, p, "parameter", out.parameter);
+    field(j, p, "appliesTo", out.appliesTo);
+    field(j, p, "combine", out.combine);
+    field(j, p, "startTick", out.startTick);
+    field(j, p, "durationTicks", out.durationTicks);
+    field(j, p, "fromValue", out.fromValue);
+    field(j, p, "toValue", out.toValue);
+    field(j, p, "curveType", out.curveType);
+    field(j, p, "steepness", out.steepness);
+}
+
+void read(const Json& j, const Path& p, MusicEvent& out)
+{
+    const std::string_view kind = tagOf(j, p, "kind");
+    if (kind == "note-event")
+        readAs<NoteEvent>(j, p, out);
+    else if (kind == "curve-event")
+        readAs<CurveEvent>(j, p, out);
+    else
+        fail(p, "unknown event kind \"" + std::string(kind) + "\"");
+}
+
+// ── Interpretation profile ─────────────────────────────────────────────────────
+
+void read(const Json& j, const Path& p, ValueChange& out)
+{
+    expectObject(j, p);
+    field(j, p, "mode", out.mode);
+    field(j, p, "value", out.value);
+}
+
+void read(const Json& j, const Path& p, CurveShape& out)
+{
+    expectObject(j, p);
+    field(j, p, "curveType", out.curveType);
+    field(j, p, "steepness", out.steepness);
+}
+
+void read(const Json& j, const Path& p, DynamicFollowUp& out)
+{
+    expectObject(j, p);
+    field(j, p, "afterQn", out.afterQn);
+    field(j, p, "mode", out.mode);
+    field(j, p, "value", out.value);
+    field(j, p, "curveType", out.curveType);
+}
+
+void read(const Json& j, const Path& p, DynamicMapping& out)
+{
+    expectObject(j, p);
+    field(j, p, "type", out.type);
+    field(j, p, "mode", out.mode);
+    field(j, p, "combine", out.combine);
+    field(j, p, "value", out.value);
+    field(j, p, "then", out.then);
+}
+
+void read(const Json& j, const Path& p, ArticulationMatch& out)
+{
+    expectKind(j, p, "articulation");
+    field(j, p, "type", out.type);
+}
+
+void read(const Json& j, const Path& p, TechniqueMatch& out)
+{
+    expectKind(j, p, "technique");
+    field(j, p, "techniqueId", out.techniqueId);
+}
+
+void read(const Json& j, const Path& p, SlurRuleMatch& out)
+{
+    expectKind(j, p, "slur");
+    field(j, p, "position", out.position);
+}
+
+void read(const Json& j, const Path& p, GraceMatch& out)
+{
+    expectKind(j, p, "grace");
+    field(j, p, "slash", out.slash);
+}
+
+void read(const Json& j, const Path& p, DynamicMatch& out)
+{
+    expectKind(j, p, "dynamic");
+    field(j, p, "type", out.type);
+}
+
+void read(const Json& j, const Path& p, AnyMatch&) { expectKind(j, p, "any"); }
+
+void read(const Json& j, const Path& p, NoteRuleMatch& out)
+{
+    const std::string_view kind = tagOf(j, p, "kind");
+    if (kind == "articulation")
+        readAs<ArticulationMatch>(j, p, out);
+    else if (kind == "technique")
+        readAs<TechniqueMatch>(j, p, out);
+    else if (kind == "slur")
+        readAs<SlurRuleMatch>(j, p, out);
+    else if (kind == "grace")
+        readAs<GraceMatch>(j, p, out);
+    else if (kind == "dynamic")
+        readAs<DynamicMatch>(j, p, out);
+    else if (kind == "any")
+        readAs<AnyMatch>(j, p, out);
+    else
+        fail(p, "unknown note rule match kind \"" + std::string(kind) + "\"");
+}
+
+void read(const Json& j, const Path& p, NoteRuleCondition& out)
+{
+    expectObject(j, p);
+    field(j, p, "maxNotatedQn", out.maxNotatedQn);
+    field(j, p, "minNotatedQn", out.minNotatedQn);
+    field(j, p, "maxPreviousNotatedQn", out.maxPreviousNotatedQn);
+    field(j, p, "maxNotatedMs", out.maxNotatedMs);
+    field(j, p, "maxPreviousNotatedMs", out.maxPreviousNotatedMs);
+    field(j, p, "slurPosition", out.slurPosition);
+    field(j, p, "hairpin", out.hairpin);
+    field(j, p, "passes", out.passes);
+}
+
+// Told apart by "op"; "add" and "scale" exist for both lengths and velocities, so
+// for those (and the other ops of each) "for" decides.
+void read(const Json& j, const Path& p, NoteRuleAction& out)
+{
+    const std::string_view op = tagOf(j, p, "op");
+    if (op == "startOffset")
+    {
+        field(j, p, "qn", out.emplace<StartOffsetAction>().qn);
+    }
+    else if (op == "addTechnique")
+    {
+        field(j, p, "techniqueId", out.emplace<AddTechniqueAction>().techniqueId);
+    }
+    else if (op == "removeTechnique")
+    {
+        field(j, p, "techniqueId", out.emplace<RemoveTechniqueAction>().techniqueId);
+    }
+    else if (op == "rollAttack")
+    {
+        auto& a = out.emplace<RollAttackAction>();
+        field(j, p, "qn", a.qn);
+        field(j, p, "together", a.together);
+    }
+    else
+    {
+        const std::string_view target = tagOf(j, p, "for");
+        if (target == "duration")
+        {
+            auto& a = out.emplace<DurationAction>();
+            field(j, p, "op", a.op);
+            field(j, p, "value", a.value);
+        }
+        else if (target == "velocity")
+        {
+            auto& a = out.emplace<VelocityAction>();
+            field(j, p, "op", a.op);
+            field(j, p, "value", a.value);
+        }
+        else
+        {
+            fail(p, "unknown action target \"" + std::string(target) + "\"");
+        }
+    }
+}
+
+void read(const Json& j, const Path& p, NoteRule& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "enabled", out.enabled);
+    field(j, p, "match", out.match);
+    field(j, p, "when", out.when);
+    field(j, p, "actions", out.actions);
+}
+
+void read(const Json& j, const Path& p, PedalMatch& out)
+{
+    expectKind(j, p, "pedal");
+    field(j, p, "type", out.type);
+}
+
+void read(const Json& j, const Path& p, CurveRuleMatch& out)
+{
+    const std::string_view kind = tagOf(j, p, "kind");
+    if (kind == "technique")
+        readAs<TechniqueMatch>(j, p, out);
+    else if (kind == "pedal")
+        readAs<PedalMatch>(j, p, out);
+    else
+        fail(p, "unknown curve rule match kind \"" + std::string(kind) + "\"");
+}
+
+void read(const Json& j, const Path& p, CurvePoint& out)
+{
+    expectObject(j, p);
+    field(j, p, "time", out.time);
+    field(j, p, "value", out.value);
+    field(j, p, "curveType", out.curveType);
+    field(j, p, "steepness", out.steepness);
+}
+
+void read(const Json& j, const Path& p, CurveRule& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "enabled", out.enabled);
+    field(j, p, "match", out.match);
+    field(j, p, "parameter", out.parameter);
+    field(j, p, "startValue", out.startValue);
+    field(j, p, "endValue", out.endValue);
+    field(j, p, "points", out.points);
+}
+
+void read(const Json& j, const Path& p, SwellSettings& out)
+{
+    expectObject(j, p);
+    field(j, p, "minMs", out.minMs);
+    field(j, p, "slurMinMs", out.slurMinMs);
+    field(j, p, "startLevel", out.startLevel);
+    field(j, p, "noteRatio", out.noteRatio);
+    field(j, p, "slurRatio", out.slurRatio);
+    field(j, p, "rise", out.rise);
+    field(j, p, "fall", out.fall);
+}
+
+void read(const Json& j, const Path& p, HairpinSettings& out)
+{
+    expectObject(j, p);
+    field(j, p, "cresc", out.cresc);
+    field(j, p, "dim", out.dim);
+    field(j, p, "defaultChange", out.defaultChange);
+}
+
+void read(const Json& j, const Path& p, TremoloExpansion& out)
+{
+    expectObject(j, p);
+    field(j, p, "unmeasuredMs", out.unmeasuredMs);
+}
+
+void read(const Json& j, const Path& p, GraceNoteTiming& out)
+{
+    expectObject(j, p);
+    field(j, p, "placement", out.placement);
+    field(j, p, "ratio", out.ratio);
+}
+
+void read(const Json& j, const Path& p, GraceNoteSettings& out)
+{
+    expectObject(j, p);
+    field(j, p, "appoggiatura", out.appoggiatura);
+    field(j, p, "acciaccatura", out.acciaccatura);
+}
+
+void read(const Json& j, const Path& p, InterpretationProfile& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "name", out.name);
+    field(j, p, "extends", out.extends);
+    field(j, p, "initialDynamics", out.initialDynamics);
+    field(j, p, "defaultPhrasing", out.defaultPhrasing);
+    field(j, p, "swell", out.swell);
+    field(j, p, "dynamics", out.dynamics);
+    field(j, p, "hairpin", out.hairpin);
+    field(j, p, "expandTremolo", out.expandTremolo);
+    field(j, p, "graceNotes", out.graceNotes);
+    field(j, p, "noteRules", out.noteRules);
+    field(j, p, "curveRules", out.curveRules);
+}
+
+// ── Instrument profile ─────────────────────────────────────────────────────────
+
+void read(const Json& j, const Path& p, OutputRange& out)
+{
+    expectObject(j, p);
+    field(j, p, "low", out.low);
+    field(j, p, "high", out.high);
+    field(j, p, "curve", out.curve);
+}
+
+void read(const Json& j, const Path& p, Keyswitch& out)
+{
+    expectObject(j, p);
+    field(j, p, "note", out.note);
+    field(j, p, "velocity", out.velocity);
+}
+
+void read(const Json& j, const Path& p, KeyswitchRange& out)
+{
+    expectObject(j, p);
+    field(j, p, "min", out.min);
+    field(j, p, "max", out.max);
+    field(j, p, "note", out.note);
+    field(j, p, "velocity", out.velocity);
+}
+
+void read(const Json& j, const Path& p, ByDuration& out)
+{
+    expectObject(j, p);
+    field(j, p, "shortMs", out.shortMs);
+    field(j, p, "longMs", out.longMs);
+    field(j, p, "atShort", out.atShort);
+    field(j, p, "atLong", out.atLong);
+}
+
+void read(const Json& j, const Path& p, CurveRangeMatch& out)
+{
+    expectKind(j, p, "curve");
+    field(j, p, "parameter", out.parameter);
+    field(j, p, "min", out.min);
+    field(j, p, "max", out.max);
+}
+
+void read(const Json& j, const Path& p, SlurMatch& out)
+{
+    expectKind(j, p, "slur");
+    field(j, p, "position", out.position);
+}
+
+void read(const Json& j, const Path& p, NoteMatch& out)
+{
+    const std::string_view kind = tagOf(j, p, "kind");
+    if (kind == "technique")
+        readAs<TechniqueMatch>(j, p, out);
+    else if (kind == "curve")
+        readAs<CurveRangeMatch>(j, p, out);
+    else if (kind == "slur")
+        readAs<SlurMatch>(j, p, out);
+    else
+        fail(p, "unknown note match kind \"" + std::string(kind) + "\"");
+}
+
+void read(const Json& j, const Path& p, std::variant<int, ByDuration>& out) // TechniqueCc.value
+{
+    if (j.is_number())
+        readAs<int>(j, p, out);
+    else
+        readAs<ByDuration>(j, p, out);
+}
+
+void read(const Json& j, const Path& p, TechniqueCc& out)
+{
+    expectObject(j, p);
+    field(j, p, "number", out.number);
+    field(j, p, "value", out.value);
+}
+
+void read(const Json& j, const Path& p, TechniqueMapping& out)
+{
+    expectObject(j, p);
+    field(j, p, "matches", out.matches);
+    field(j, p, "keyswitch", out.keyswitch);
+    field(j, p, "cc", out.cc);
+    field(j, p, "channelMode", out.channelMode);
+    field(j, p, "channels", out.channels);
+    field(j, p, "durationMs", out.durationMs);
+    field(j, p, "startOffsetMs", out.startOffsetMs);
+    field(j, p, "velocity", out.velocity);
+    field(j, p, "notes", out.notes);
+    field(j, p, "alignToEnd", out.alignToEnd);
+}
+
+void read(const Json& j, const Path& p, CurveCc& out)
+{
+    expectObject(j, p);
+    field(j, p, "number", out.number);
+    field(j, p, "mapping", out.mapping);
+}
+
+void read(const Json& j, const Path& p, CurveMapping& out)
+{
+    expectObject(j, p);
+    field(j, p, "parameter", out.parameter);
+    field(j, p, "defaultValue", out.defaultValue);
+    field(j, p, "cc", out.cc);
+    field(j, p, "keyswitch", out.keyswitch);
+    field(j, p, "channels", out.channels);
+}
+
+// InstrumentProfile.velocity: { "fixed": ... } or { "mapping": ... }.
+void read(const Json& j, const Path& p, std::variant<FixedVelocity, MappedVelocity>& out)
+{
+    expectObject(j, p);
+    if (j.contains("fixed"))
+        field(j, p, "fixed", out.emplace<FixedVelocity>().fixed);
+    else if (j.contains("mapping"))
+        field(j, p, "mapping", out.emplace<MappedVelocity>().mapping);
+    else
+        fail(p, "expected \"fixed\" or \"mapping\"");
+}
+
+void read(const Json& j, const Path& p, DampKeyswitch& out)
+{
+    expectObject(j, p);
+    field(j, p, "note", out.note);
+    field(j, p, "velocity", out.velocity);
+    field(j, p, "atRests", out.atRests);
+    field(j, p, "afterTechniques", out.afterTechniques);
+}
+
+void read(const Json& j, const Path& p, std::variant<int, std::vector<int>>& out) // a kit entry's notes
+{
+    if (j.is_array())
+        readAs<std::vector<int>>(j, p, out);
+    else
+        readAs<int>(j, p, out);
+}
+
+void read(const Json& j, const Path& p, InstrumentProfile& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "name", out.name);
+    field(j, p, "trackDelayMs", out.trackDelayMs);
+    field(j, p, "velocity", out.velocity);
+    field(j, p, "techniqueMappings", out.techniqueMappings);
+    field(j, p, "curveMappings", out.curveMappings);
+    field(j, p, "defaultChannel", out.defaultChannel);
+    field(j, p, "kit", out.kit);
+    field(j, p, "pitchOffset", out.pitchOffset);
+    field(j, p, "keyswitchLeadMs", out.keyswitchLeadMs);
+    field(j, p, "dampKeyswitch", out.dampKeyswitch);
+}
+
+// ── Event overrides and the playback setup ─────────────────────────────────────
+
+void read(const Json& j, const Path& p, TechniqueChanges& out)
+{
+    expectObject(j, p);
+    field(j, p, "add", out.add);
+    field(j, p, "remove", out.remove);
+}
+
+void read(const Json& j, const Path& p, NoteEventOverride& out)
+{
+    expectKind(j, p, "note-event-override");
+    field(j, p, "id", out.id);
+    field(j, p, "sourceId", out.sourceId);
+    field(j, p, "passes", out.passes);
+    field(j, p, "pitch", out.pitch);
+    field(j, p, "durationTicks", out.durationTicks);
+    field(j, p, "startTickOffset", out.startTickOffset);
+    field(j, p, "velocity", out.velocity);
+    field(j, p, "techniques", out.techniques);
+    field(j, p, "startOffsetMs", out.startOffsetMs);
+}
+
+void read(const Json& j, const Path& p, CurveEventOverride& out)
+{
+    expectKind(j, p, "curve-event-override");
+    field(j, p, "id", out.id);
+    field(j, p, "sourceId", out.sourceId);
+    field(j, p, "passes", out.passes);
+    field(j, p, "segmentIndex", out.segmentIndex);
+    field(j, p, "parameter", out.parameter);
+    field(j, p, "appliesTo", out.appliesTo);
+    field(j, p, "durationTicks", out.durationTicks);
+    field(j, p, "startTickOffset", out.startTickOffset);
+    field(j, p, "fromValue", out.fromValue);
+    field(j, p, "toValue", out.toValue);
+    field(j, p, "curveType", out.curveType);
+    field(j, p, "steepness", out.steepness);
+}
+
+void read(const Json& j, const Path& p, MusicEventOverride& out)
+{
+    const std::string_view kind = tagOf(j, p, "kind");
+    if (kind == "note-event-override")
+        readAs<NoteEventOverride>(j, p, out);
+    else if (kind == "curve-event-override")
+        readAs<CurveEventOverride>(j, p, out);
+    else
+        fail(p, "unknown override kind \"" + std::string(kind) + "\"");
+}
+
+void read(const Json& j, const Path& p, TechniqueDefinition& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "group", out.group);
+    field(j, p, "fallback", out.fallback);
+}
+
+void read(const Json& j, const Path& p, TrackOutput& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "name", out.name);
+    field(j, p, "instrumentProfileId", out.instrumentProfileId);
+    field(j, p, "sounds", out.sounds);
+}
+
+void read(const Json& j, const Path& p, TrackPlayback& out)
+{
+    expectObject(j, p);
+    field(j, p, "interpretationProfileId", out.interpretationProfileId);
+    field(j, p, "outputs", out.outputs);
+}
+
+void read(const Json& j, const Path& p, PlaybackSetup& out)
+{
+    expectObject(j, p);
+    field(j, p, "techniques", out.techniques);
+    field(j, p, "interpretationProfiles", out.interpretationProfiles);
+    field(j, p, "instrumentProfiles", out.instrumentProfiles);
+    field(j, p, "trackProfiles", out.trackProfiles);
+    field(j, p, "overrides", out.overrides);
+}
+
 // ── Entry points ───────────────────────────────────────────────────────────────
 
 Json parseText(std::string_view text)
@@ -1026,6 +1659,23 @@ LayoutSetup parseLayoutSetup(std::string_view json) { return readRoot<LayoutSetu
 LayoutSetup loadLayoutSetup(const std::filesystem::path& file)
 {
     return readRootFrom<LayoutSetup>(parseFile(file), file);
+}
+
+PlaybackSetup parsePlaybackSetup(std::string_view json) { return readRoot<PlaybackSetup>(parseText(json)); }
+
+PlaybackSetup loadPlaybackSetup(const std::filesystem::path& file)
+{
+    return readRootFrom<PlaybackSetup>(parseFile(file), file);
+}
+
+std::vector<MusicEvent> parseMusicEvents(std::string_view json)
+{
+    return readRoot<std::vector<MusicEvent>>(parseText(json));
+}
+
+std::vector<MusicEvent> loadMusicEvents(const std::filesystem::path& file)
+{
+    return readRootFrom<std::vector<MusicEvent>>(parseFile(file), file);
 }
 
 } // namespace msd
