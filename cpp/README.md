@@ -72,13 +72,17 @@ Fetched dependencies are shared between presets in `build/_deps`.
 ```
 cpp/
 ├── build.ps1, CMakeLists.txt, CMakePresets.json, cmake/Dependencies.cmake
-├── resources/default.layout.json   a LayoutSetup with one profile, for now
+├── resources/default.layout.json   LayoutSetup: profiles "default" and "large-score", one layout
 ├── src/
 │   ├── core/                       library msd_core: no JUCE, testable without a window
 │   │   ├── types/                  MusicData.h, LayoutProfile.h, LayoutSetup.h
 │   │   └── json/                   Load.h/.cpp (JSON → types), EnumNames.h
 │   ├── layout/                     library msd_layout: MusicData → boxes, no JUCE either
-│   └── app/                        the JUCE window
+│   │   ├── PageLayout.h            reflow() → Layout.flow, layoutPages()
+│   │   ├── SystemLayout.h          one system: spacing, notes, beams, barlines
+│   │   ├── Accidentals.h, Transpose.h, StaffPosition.h
+│   │   └── SmuflFont.h, SmuflGlyphNames.h, Geometry.h
+│   └── app/                        the JUCE window: MainComponent, ScoreView, MusicFont
 └── tests/                          Catch2 unit tests (msd_tests)
 ```
 
@@ -103,20 +107,45 @@ To check they all load:
 cpp\build\debug\tests\msd_tests.exe "[exported]"
 ```
 
-In Debug this takes about 30 s for all 9 scores; in Release it takes about 2 s.
-The same tag also lays out the first system of every staff in those scores.
+The same tag also lays out the first system of every staff, and reflows every
+score onto pages. In Release all of it takes about 6 s; Debug is much slower.
 
 ## Layout (the engraving kind)
 
-`layoutSystem()` in `src/layout/SystemLayout.h` lays out one system of one staff.
-The caller picks the measures; later they come from `Layout.flow`, so editing
-never moves a system. The result is a list of `LayoutBox`es in staff spaces, each
-with the `nodeId` it came from, a `Part`, its bounds, and a SMuFL glyph or a line
-to draw.
+Two steps, so that pages don't move while the music is edited
+(`src/layout/PageLayout.h`):
+
+- `reflow()` breaks the music into systems and pages and places every system and
+  staff. Its result is `Layout.flow`. It runs when a score is opened and on
+  **Reflow**, never on its own. Systems take measures while their natural widths
+  fit the page; the user's break, no-break and staff-gap elements are kept.
+- `layoutPages()` lays out the pages a flow describes. A measure added since the
+  reflow joins the system before it (squeezed, or overfull), a system whose start
+  measure is gone joins the one before, and a staff the flow doesn't know goes
+  below the others.
+
+`layoutSystem()` (`src/layout/SystemLayout.h`) lays out one system: every staff
+spaced together, so notes sounding at the same time line up. The result is a list
+of `LayoutBox`es in staff spaces, each with the `nodeId` it came from, a `Part`,
+its bounds, and a SMuFL glyph, a line or a beam to draw. It handles clefs, keys
+and time signatures, noteheads, ledger lines, accidentals (key, measure and tie
+rules), dots, stems, flags, beams (grouped by beat), rests, seconds in chords,
+barlines joined per instrument, braces, and transposing instruments at written
+pitch. Spacing never squeezes symbols into each other: a system that can't fit
+comes out wider than asked.
 
 Glyph sizes, stem anchors and line thicknesses come from the font's SMuFL
 metadata (`SmuflFont`), so any SMuFL font with metadata can replace Leland.
 Leland v0.80 is fetched at configure time into `build/_deps/leland-src`.
+
+Profiles in `resources/default.layout.json`: `default` (A4, 1.75 mm staves) and
+`large-score` (A3, 1 mm staves, 4 sp between staves). The app uses `large-score`
+when a system with every staff wouldn't fit the default's page.
+
+Not done yet: ties, slurs, tuplet brackets, dynamics, articulations, text and
+instrument names, grace notes, clef changes inside a system, naturals at key
+changes, beam positions relative to staff lines, and vertical spacing by content
+(staves are a fixed distance apart, so far-out notes can reach the next staff).
 
 ## Painting
 
@@ -127,12 +156,13 @@ width in the font's metadata. `ScoreView` fills each glyph and line, scaled by t
 zoom. Leland, its metadata, `glyphnames.json` and the default layout are compiled
 into the app.
 
-Hovering a symbol shows its `nodeId` and part; **Boxes** draws every box's bounds.
-The system is as wide as the profile's page minus its margins, whatever the window.
+The app shows the pages one below the other. Hovering a symbol shows its `nodeId`,
+part and page; **Boxes** draws every box's bounds; **Reflow** reflows the score.
+The flow lives only in memory for now.
 
 ```powershell
-# score, staff ID and first measure are all optional
-& "cpp\build\debug\src\app\MusicsheetDawApp_artefacts\Debug\Musicsheet DAW.exe" prototype-web\midi-out\piano.music.json pno-lh 1
+# score and first page to show are both optional
+& "cpp\build\debug\src\app\MusicsheetDawApp_artefacts\Debug\Musicsheet DAW.exe" prototype-web\midi-out\piano.music.json 1
 ```
 
 Scores load on the UI thread: the big ones (`smb_3m`, 77 MB) freeze the window for

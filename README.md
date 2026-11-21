@@ -17,6 +17,19 @@ Music Data ──(expand repeats, tag pass #)──► played order
   ──(Instrument Profile + library-specific tweaks)──► MIDI ──► VST
 ```
 
+## Status
+
+- `prototype-web/`: the TypeScript prototype. MusicData and profile types, MusicXML
+  import, and playback: `pnpm midi` writes MIDI for Cinematic Studio and Symphony
+  Series Percussion, judged in a DAW. Its notation view (VexFlow) is a stopgap.
+- `cpp/`: the native app (C++20, JUCE 8). It loads the MusicData `pnpm midi`
+  writes and lays it out on pages with its own engraving (Leland, SMuFL): system
+  and page breaks are kept in `Layout.flow` and change only on a reflow. See
+  [cpp/README.md](cpp/README.md) for what the layout draws so far.
+
+Next: port playback to C++, checked against the `pnpm midi` output; then editing;
+then hosting VST plugins.
+
 ## License
 
 Copyright (C) 2026 Harlos
