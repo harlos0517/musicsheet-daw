@@ -38,7 +38,7 @@ private:
 
     // Profile IDs in resources/default.layout.json.
     static constexpr const char* defaultProfileId = "default";
-    static constexpr const char* largeScoreProfileId = "large-score"; // 1 mm staves
+    static constexpr const char* largeScoreProfileId = "large-score"; // 1 mm staves on A3
 
     // Declared before scoreView, which keeps a reference to it.
     std::unique_ptr<MusicFont> font;

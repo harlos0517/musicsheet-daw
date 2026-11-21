@@ -520,15 +520,17 @@ TEST_CASE("a layout shows only its own tracks", "[pages]")
     CHECK(flow.pages.at(0).systems.at(0).staffYSp.size() == 1);
 }
 
-TEST_CASE("large scores get 1 mm staves on A4", "[pages]")
+TEST_CASE("large scores get 1 mm staves on A3, closer together", "[pages]")
 {
     const LayoutSetup setup = loadLayoutSetup(std::filesystem::path(MSD_RESOURCES_DIR) / "default.layout.json");
     REQUIRE(setup.layoutProfiles.size() == 2);
     const LayoutProfile& large = setup.layoutProfiles[1];
     CHECK(large.id == "large-score");
     CHECK(large.staffSpaceMm == 1.0);
-    CHECK(large.page.widthMm == 210);
-    CHECK(large.page.heightMm == 297);
+    CHECK(large.page.widthMm == 297);
+    CHECK(large.page.heightMm == 420);
+    CHECK(large.distances.trackSp == 4);
+    CHECK(large.distances.staffSp == 4);
 
     // A system's height: staves, and the distances between them.
     const MusicData quartet =
@@ -546,14 +548,16 @@ TEST_CASE("large scores get 1 mm staves on A4", "[pages]")
     CHECK(systemFitsPage(twenty, fullScore(), large));
 }
 
-// Reflows every exported score and lays out all its pages.
+// Reflows every exported score and lays out all its pages, with the profile the app
+// picks: the default, or the large-score one when a system doesn't fit the default's
+// page. Either way, a system fits its page.
 TEST_CASE("every exported score lays out on pages", "[.][exported]")
 {
     const std::filesystem::path folder = MSD_EXPORTED_SCORES_DIR;
     if (!std::filesystem::exists(folder))
         SKIP("no " << folder.string() << "; run pnpm midi in prototype-web first");
 
-    const LayoutProfile& profile = defaultProfile();
+    const LayoutSetup setup = loadLayoutSetup(std::filesystem::path(MSD_RESOURCES_DIR) / "default.layout.json");
     for (const auto& entry : std::filesystem::directory_iterator(folder))
     {
         const std::string name = entry.path().filename().string();
@@ -561,6 +565,10 @@ TEST_CASE("every exported score lays out on pages", "[.][exported]")
             continue;
         INFO(name);
         const MusicData music = loadMusicData(entry.path());
+        const bool fits = systemFitsPage(music, fullScore(), setup.layoutProfiles.at(0));
+        const LayoutProfile& profile = setup.layoutProfiles.at(fits ? 0 : 1);
+        INFO(profile.id);
+        CHECK(systemFitsPage(music, fullScore(), profile));
         const ScoreInput input { .music = music, .profile = profile, .font = leland(), .layout = fullScore() };
         Flow flow;
         REQUIRE_NOTHROW(flow = reflow(input));
