@@ -2,3 +2,8 @@ node_modules
 midi-out
 scores
 vst-manual
+
+# VS Code: share the project settings and recommended extensions, nothing else.
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json

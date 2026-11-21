@@ -21,6 +21,13 @@ If `cl` and `ninja` aren't on PATH yet, the script finds the newest stable VS
 install with vswhere and enters its x64 dev shell. That shell stays active in
 the current terminal session.
 
+### VS Code
+
+Open the repository folder and install the recommended extensions when asked.
+CMake Tools reads `CMakePresets.json` and sets up the MSVC environment itself,
+so configure, build and debug work from its status bar without a developer
+shell; IntelliSense takes its flags from the same build.
+
 ### By hand
 
 MSVC and Ninja are only on PATH inside a developer shell.
