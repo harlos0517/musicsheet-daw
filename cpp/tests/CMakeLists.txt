@@ -1,7 +1,8 @@
 add_executable(msd_tests
     EnumNamesTests.cpp
     LayoutTests.cpp
-    LoadTests.cpp)
+    LoadTests.cpp
+    NoteTests.cpp)
 
 target_link_libraries(msd_tests PRIVATE msd_core msd_layout Catch2::Catch2WithMain)
 

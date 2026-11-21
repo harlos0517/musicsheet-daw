@@ -1,6 +1,8 @@
 # msd_layout: turns MusicData + a LayoutProfile + SMuFL font metadata into boxes.
 # No JUCE: it runs (and is tested) without a window.
 add_library(msd_layout STATIC
+    Accidentals.cpp
+    Accidentals.h
     Geometry.h
     SmuflFont.cpp
     SmuflFont.h

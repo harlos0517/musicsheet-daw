@@ -32,7 +32,10 @@ juce::String partName(Part part)
     case Part::KeySignature: return "key signature";
     case Part::TimeSignature: return "time signature";
     case Part::Notehead: return "notehead";
+    case Part::Accidental: return "accidental";
+    case Part::Dot: return "dot";
     case Part::Stem: return "stem";
+    case Part::Flag: return "flag";
     case Part::Rest: return "rest";
     }
     return "?";
