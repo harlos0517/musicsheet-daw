@@ -10,21 +10,26 @@
 
 #include "layout/Accidentals.h"
 #include "layout/StaffPosition.h"
+#include "layout/Transpose.h"
 
 // How this works
 // ──────────────
 // 1. Plan: walk the measures before the system to know the clef, key and time
-//    signature in force, then for each measure in the system find its events and the
-//    ticks where something starts (onsets). Each chord and rest gets its shape —
-//    noteheads, accidentals, stem, flag, dots — drawn around x = 0, so its extent to
-//    the left and right is known. Each onset gets the space its duration asks for, but
-//    at least enough that its shapes don't touch the next onset's.
+//    signature in force, then for each measure in the system and each staff find the
+//    events, and the ticks where something starts (onsets) on any staff. Each chord and
+//    rest gets its shape — noteheads, accidentals, stem, flag, dots — drawn around
+//    x = 0, so its extent to the left and right is known. Each onset gets the space its
+//    duration asks for, but at least enough that no staff's shapes touch the next
+//    onset's.
 // 2. Justify: the fixed parts (header, padding) keep their width; the space between
 //    onsets is stretched by one factor, or squeezed towards each onset's minimum, so
 //    the system fills `width`. It never squeezes below the minimum.
 // 3. Emit: turn every staff line, signature, event shape and barline into LayoutBoxes
 //    at their final position. Beams come last: their slope and the stems that reach
 //    them depend on how far apart the notes ended up.
+//
+// Every staff is planned in its own coordinates (y from its top line); emitting moves
+// it down to its place in the system.
 
 namespace msd
 {
@@ -113,6 +118,8 @@ struct PlacedEvent
 };
 
 bool onLine(double y) { return std::abs(y - std::round(y)) < 1e-6; }
+
+bool isFullMeasureRest(const PlacedEvent& event) { return event.rest && event.rest->fullMeasure.value_or(false); }
 
 Rect lineBounds(Point from, Point to, double thickness)
 {
@@ -252,41 +259,89 @@ std::string flagGlyph(int flags, bool up)
     return std::string("flag") + names[std::clamp(flags, 1, 5) - 1] + (up ? "Up" : "Down");
 }
 
-// ── Plans ──────────────────────────────────────────────────────────────────────
+// ── Staves and plans ───────────────────────────────────────────────────────────
 
+const Clef defaultClef { .id = {}, .type = ClefType::G, .line = 2, .octaveChange = 0 };
+
+// One staff of the system, and what planning needs to remember about it.
+struct StaffContext
+{
+    const Track* track = nullptr;
+    const Staff* staff = nullptr;
+    int lines = 5;
+    double y = 0;            // its top line, in the system
+    Clef clef = defaultClef; // in force where planning has got to
+
+    // This staff's part of measure `index`, or null. Staff measures usually line up
+    // with the score's measures; only when they don't is an index by ID built.
+    const StaffMeasure* measureAt(std::size_t index, const Measure& measure) const
+    {
+        const std::vector<StaffMeasure>& measures = staff->measures;
+        if (index < measures.size() && measures[index].measureId == measure.id)
+            return &measures[index];
+        if (!byId)
+        {
+            byId.emplace();
+            for (const StaffMeasure& staffMeasure : measures)
+                byId->emplace(staffMeasure.measureId, &staffMeasure);
+        }
+        const auto it = byId->find(measure.id);
+        return it == byId->end() ? nullptr : it->second;
+    }
+
+    mutable std::optional<std::map<std::string_view, const StaffMeasure*>> byId; // measureAt's index
+};
+
+// A tick where something starts on some staff.
 struct Onset
 {
     Tick tick = 0;
-    double spring = 0;                // natural space from here to the next onset
-    double minimum = 0;               // the least space that keeps its shapes clear of the next
-    double left = 0;                  // how far its shapes reach left of the onset (≥ 0)
-    double right = 0;                 // how far they reach right of it
-    std::vector<std::size_t> events;  // indices into MeasurePlan::events
+    double spring = 0;  // natural space from here to the next onset
+    double minimum = 0; // the least space that keeps its shapes clear of the next
+    double left = 0;    // how far its shapes reach left of the onset (≥ 0), on any staff
+    double right = 0;   // how far they reach right of it
+};
+
+// One measure of one staff.
+struct StaffPlan
+{
+    const StaffMeasure* staffMeasure = nullptr; // null when this staff has nothing here
+    Clef clefBefore;                            // in force before this measure's own clef changes
+    std::optional<Clef> clef;                   // drawn at the measure's start
+    int key = 0;                                // the written key signature in force
+    bool drawKey = false;                       // drawn at the measure's start
+    std::vector<PlacedEvent> events;            // in time order
+    std::vector<std::vector<std::size_t>> beams; // each group's chords, indices into events
+    bool severalVoices = false;
 };
 
 struct MeasurePlan
 {
     const Measure* measure = nullptr;
-    const StaffMeasure* staffMeasure = nullptr; // null when this staff has nothing here
     Tick length = 0;
-    Clef clefBefore; // in force before this measure's own clef changes
 
-    // Signatures drawn at the measure's start (the system header, for the first one).
-    std::optional<Clef> clef;
-    std::optional<KeySignature> key;
+    // Signatures drawn at the measure's start (the system header, for the first one),
+    // at the same x on every staff.
     std::optional<TimeSignature> time;
+    NodeId keyId; // the key signature in force, for the boxes of a drawn one
     double clefX = 0; // from the measure's left edge
     double keyX = 0;
     double timeX = 0;
-    double lead = 0;  // left edge → first onset: fixed, never stretched
+    double lead = 0; // left edge → first onset: fixed, never stretched
 
-    std::vector<PlacedEvent> events;
-    std::vector<Onset> onsets;
-    std::vector<std::vector<std::size_t>> beams; // each group's chords, indices into events
-    bool severalVoices = false;
+    std::vector<StaffPlan> staves; // one per staff of the system
+    std::vector<Onset> onsets;     // on any staff, in time order
+
+    double naturalWidth() const
+    {
+        double width = lead;
+        for (const Onset& onset : onsets)
+            width += onset.spring;
+        return width;
+    }
 };
 
-Clef clefAt(const MeasurePlan& plan, Tick tick)
+Clef clefAt(const StaffPlan& plan, Tick tick)
 {
     Clef clef = plan.clefBefore;
     if (plan.staffMeasure == nullptr)
@@ -306,41 +361,39 @@ Clef clefAt(const MeasurePlan& plan, Tick tick)
 class SystemBuilder
 {
 public:
-    SystemBuilder(const SystemInput& input, const Track& track, const Staff& staff)
+    explicit SystemBuilder(const SystemInput& input)
         : in(input)
-        , track(track)
-        , staff(staff)
         , font(input.font)
         , engraving(input.font.engravingDefaults())
-        , lines(staff.lines.value_or(5))
         , tpq(input.music.tpq > 0 ? input.music.tpq : 480)
     {
-        for (const StaffMeasure& staffMeasure : staff.measures)
+        const std::size_t measureTotal = in.music.measures.size();
+        if (in.measureCount == 0 || in.firstMeasure >= measureTotal || in.measureCount > measureTotal - in.firstMeasure)
+            throw std::invalid_argument("measures " + std::to_string(in.firstMeasure) + " + "
+                                        + std::to_string(in.measureCount) + " are outside the score ("
+                                        + std::to_string(measureTotal) + " measures)");
+        if (in.staves.empty())
+            throw std::invalid_argument("a system needs at least one staff");
+
+        // Ties into the system's measures start in them or in the measure before.
+        const std::size_t tiesFrom = in.firstMeasure > 0 ? in.firstMeasure - 1 : 0;
+        for (const SystemStaff& wanted : in.staves)
         {
-            staffMeasures.emplace(staffMeasure.measureId, &staffMeasure);
-            for (const Voice& voice : staffMeasure.voices)
-                collectTieTargets(voice.events);
+            StaffContext context = findStaff(wanted.staffId);
+            context.y = wanted.y;
+            for (std::size_t i = tiesFrom; i < in.firstMeasure + in.measureCount; ++i)
+                if (const StaffMeasure* staffMeasure = context.measureAt(i, in.music.measures[i]))
+                    for (const Voice& voice : staffMeasure->voices)
+                        collectTieTargets(voice.events);
+            staves.push_back(std::move(context));
         }
     }
 
     SystemLayout build()
     {
-        // The clef, key and time signature in force where the system starts.
-        for (std::size_t i = 0; i < in.firstMeasure; ++i)
-        {
-            const Measure& measure = in.music.measures[i];
-            if (measure.timeSig)
-                timeSig = measure.timeSig;
-            if (measure.key)
-                key = measure.key;
-            MeasurePlan before;
-            before.clefBefore = clef;
-            before.staffMeasure = staffMeasureFor(measure);
-            clef = clefAt(before, std::numeric_limits<Tick>::max());
-        }
-
+        skipTo(in.firstMeasure);
         for (std::size_t i = in.firstMeasure; i < in.firstMeasure + in.measureCount; ++i)
-            plans.push_back(planMeasure(in.music.measures[i], i == in.firstMeasure));
+            plans.push_back(planMeasure(i, i == in.firstMeasure));
 
         double fixed = 0;
         double natural = 0;
@@ -370,21 +423,56 @@ public:
                 squeeze = 0;
         }
 
-        out.staffId = staff.id;
-        out.staffLines = lines;
         out.width = fixed;
         for (const MeasurePlan& plan : plans)
             for (const Onset& onset : plan.onsets)
                 out.width += space(onset);
+        for (const StaffContext& staff : staves)
+            out.staves.push_back({ staff.staff->id, staff.y, staff.lines });
 
         emitStaffLines();
+        emitSystemStart();
         double x = 0;
         for (const MeasurePlan& plan : plans)
             x = emitMeasure(plan, x);
         return std::move(out);
     }
 
+    std::vector<MeasureWidth> widths()
+    {
+        skipTo(in.firstMeasure);
+        std::vector<MeasureWidth> result;
+        for (std::size_t i = in.firstMeasure; i < in.firstMeasure + in.measureCount; ++i)
+        {
+            // Plan it twice from the same state: as a system's first measure and not.
+            const auto savedTime = timeSig;
+            const auto savedKey = key;
+            std::vector<Clef> savedClefs;
+            for (const StaffContext& staff : staves)
+                savedClefs.push_back(staff.clef);
+
+            MeasureWidth width;
+            width.first = planMeasure(i, true).naturalWidth();
+            timeSig = savedTime;
+            key = savedKey;
+            for (std::size_t s = 0; s < staves.size(); ++s)
+                staves[s].clef = savedClefs[s];
+            width.other = planMeasure(i, false).naturalWidth();
+            result.push_back(width);
+        }
+        return result;
+    }
+
 private:
+    StaffContext findStaff(const NodeId& staffId) const
+    {
+        for (const Track& track : in.music.tracks)
+            for (const Staff& staff : track.staves)
+                if (staff.id == staffId)
+                    return { .track = &track, .staff = &staff, .lines = staff.lines.value_or(5) };
+        throw std::invalid_argument("no staff with id \"" + staffId + "\"");
+    }
+
     // Notes that continue a tie: they show no accidental.
     void collectTieTargets(const std::vector<VoiceEvent>& events)
     {
@@ -403,10 +491,24 @@ private:
         }
     }
 
-    const StaffMeasure* staffMeasureFor(const Measure& measure) const
+    // The clef, key and time signature in force where measure `index` starts.
+    void skipTo(std::size_t index)
     {
-        const auto it = staffMeasures.find(measure.id);
-        return it == staffMeasures.end() ? nullptr : it->second;
+        for (std::size_t i = 0; i < index; ++i)
+        {
+            const Measure& measure = in.music.measures[i];
+            if (measure.timeSig)
+                timeSig = measure.timeSig;
+            if (measure.key)
+                key = measure.key;
+            for (StaffContext& staff : staves)
+            {
+                StaffPlan before;
+                before.clefBefore = staff.clef;
+                before.staffMeasure = staff.measureAt(i, measure);
+                staff.clef = clefAt(before, std::numeric_limits<Tick>::max());
+            }
+        }
     }
 
     double glyphRight(const std::string& glyph) const
@@ -415,12 +517,12 @@ private:
         return box ? std::max(0.0, box->right) : 0.0;
     }
 
-    double keyWidth(const KeySignature& keySig) const
+    double keyWidth(int accidentals) const
     {
-        const int count = std::min(std::abs(keySig.accidentals), 7);
+        const int count = std::min(std::abs(accidentals), 7);
         if (count == 0)
             return 0;
-        const double each = glyphRight(keySig.accidentals > 0 ? "accidentalSharp" : "accidentalFlat");
+        const double each = glyphRight(accidentals > 0 ? "accidentalSharp" : "accidentalFlat");
         return count * each + (count - 1) * in.header.keyAccidentalGapSp;
     }
 
@@ -504,11 +606,11 @@ private:
 
     // A beamed group's stems all point one way: the way a single chord would, judged by
     // the group's note farthest from the middle line. With several voices, by voice.
-    bool groupStemUp(const MeasurePlan& plan, const std::vector<std::size_t>& group) const
+    bool groupStemUp(const StaffContext& staff, const StaffPlan& plan, const std::vector<std::size_t>& group) const
     {
         if (plan.severalVoices)
             return plan.events[group.front()].voice % 2 == 0;
-        const double middle = middleLineY(lines);
+        const double middle = middleLineY(staff.lines);
         double above = 0;
         double below = 0;
         for (const std::size_t e : group)
@@ -517,7 +619,7 @@ private:
             const Clef eventClef = clefAt(plan, event.tick);
             for (const ChordNote& chordNote : event.chord->notes)
             {
-                const double y = noteY(chordNote, eventClef);
+                const double y = noteY(staff, chordNote, eventClef);
                 above = std::max(above, middle - y);
                 below = std::max(below, y - middle);
             }
@@ -525,24 +627,27 @@ private:
         return below > above;
     }
 
-    double noteY(const ChordNote& chordNote, const Clef& noteClef) const
+    // Where a note's head goes: at its written pitch, or its kit entry's line.
+    double noteY(const StaffContext& staff, const ChordNote& chordNote, const Clef& noteClef) const
     {
         return std::visit(Overloaded {
-                              [&](const Note& note) { return pitchY(note.pitch, noteClef, lines); },
+                              [&](const Note& note) {
+                                  return pitchY(writtenPitch(note.pitch, staff.track->transposition), noteClef,
+                                                staff.lines);
+                              },
                               [&](const UnpitchedNote& note) {
-                                  const KitEntry* entry = kitEntry(note.kitEntryId);
-                                  return unpitchedY(entry ? entry->displayPitch : 0, lines);
+                                  const KitEntry* entry = kitEntry(staff, note.kitEntryId);
+                                  return unpitchedY(entry ? entry->displayPitch : 0, staff.lines);
                               },
                           },
                           chordNote);
     }
 
-    MeasurePlan planMeasure(const Measure& measure, bool first)
+    MeasurePlan planMeasure(std::size_t index, bool first)
     {
+        const Measure& measure = in.music.measures[index];
         MeasurePlan plan;
         plan.measure = &measure;
-        plan.staffMeasure = staffMeasureFor(measure);
-        plan.clefBefore = clef;
 
         const std::optional<KeySignature> previousKey = key;
         const std::optional<TimeSignature> previousTime = timeSig;
@@ -551,25 +656,35 @@ private:
         if (measure.key)
             key = measure.key;
         plan.length = measure.actualTicks.value_or(timeSig ? timeSignatureTicks(*timeSig, tpq) : Tick(4) * tpq);
+        if (key)
+            plan.keyId = key->id;
 
-        // Which signatures this measure draws at its start.
-        if (first)
+        // Which signatures this measure draws at its start. A key signature is drawn on
+        // the staves where it has accidentals, as written for the instrument; kits have
+        // none.
+        const bool keyChanged = measure.key && (!previousKey || previousKey->accidentals != measure.key->accidentals);
+        if (first ? measure.timeSig.has_value()
+                  : measure.timeSig
+                        && (!previousTime || previousTime->beats != measure.timeSig->beats
+                            || previousTime->unit != measure.timeSig->unit))
+            plan.time = measure.timeSig;
+
+        double clefWidth = 0;
+        double keyWidthMax = 0;
+        for (StaffContext& staff : staves)
         {
-            plan.clef = clefAt(plan, 0);
-            if (key && key->accidentals != 0)
-                plan.key = key;
-            if (measure.timeSig)
-                plan.time = measure.timeSig;
-        }
-        else
-        {
-            if (measure.key && measure.key->accidentals != 0
-                && (!previousKey || previousKey->accidentals != measure.key->accidentals))
-                plan.key = measure.key;
-            if (measure.timeSig
-                && (!previousTime || previousTime->beats != measure.timeSig->beats
-                    || previousTime->unit != measure.timeSig->unit))
-                plan.time = measure.timeSig;
+            StaffPlan& staffPlan = plan.staves.emplace_back();
+            staffPlan.staffMeasure = staff.measureAt(index, measure);
+            staffPlan.clefBefore = staff.clef;
+            staffPlan.key = staff.track->kit ? 0 : writtenKey(key ? key->accidentals : 0, staff.track->transposition);
+            staffPlan.drawKey = (first || keyChanged) && staffPlan.key != 0;
+            if (first)
+            {
+                staffPlan.clef = clefAt(staffPlan, 0);
+                clefWidth = std::max(clefWidth, glyphRight(clefGlyph(*staffPlan.clef, font)));
+            }
+            if (staffPlan.drawKey)
+                keyWidthMax = std::max(keyWidthMax, keyWidth(staffPlan.key));
         }
 
         // Fixed space before the first note, and where each signature goes.
@@ -582,76 +697,32 @@ private:
             x += width;
             anyItem = true;
         };
-        if (plan.clef)
-            placeItem(glyphRight(clefGlyph(*plan.clef, font)), plan.clefX);
-        if (plan.key)
-            placeItem(keyWidth(*plan.key), plan.keyX);
+        if (first)
+            placeItem(clefWidth, plan.clefX);
+        if (keyWidthMax > 0)
+            placeItem(keyWidthMax, plan.keyX);
         if (plan.time)
             placeItem(timeWidth(*plan.time), plan.timeX);
         plan.lead = anyItem ? x + header.toFirstNoteSp : x;
 
-        // Events, and the onsets they make.
-        std::set<int> voices;
-        if (plan.staffMeasure)
-            for (const Voice& voice : plan.staffMeasure->voices)
-            {
-                const std::size_t before = plan.events.size();
-                placeEvents(voice.events, 0, 1, 1, tpq, voice.index, plan.events);
-                if (plan.events.size() > before)
-                    voices.insert(voice.index);
-            }
-        plan.severalVoices = voices.size() > 1;
+        // Events and their shapes, staff by staff.
+        for (std::size_t s = 0; s < staves.size(); ++s)
+            planEvents(staves[s], plan.staves[s]);
 
-        // In time order, so each note knows the accidentals before it in the measure.
-        std::stable_sort(plan.events.begin(), plan.events.end(),
-                         [](const PlacedEvent& a, const PlacedEvent& b) { return a.tick < b.tick; });
-        // Beam groups, and the stem direction each one shares.
-        plan.beams = beamGroups(plan.events);
-        std::vector<std::optional<bool>> beamUp(plan.events.size());
-        for (const std::vector<std::size_t>& group : plan.beams)
-        {
-            const bool up = groupStemUp(plan, group);
-            for (const std::size_t e : group)
-                beamUp[e] = up;
-        }
-
-        MeasureAccidentals accidentals(key ? key->accidentals : 0);
-        for (std::size_t e = 0; e < plan.events.size(); ++e)
-        {
-            PlacedEvent& event = plan.events[e];
-            if (event.chord)
-            {
-                std::vector<std::optional<AccidentalMark>> marks;
-                for (const ChordNote& chordNote : event.chord->notes)
-                {
-                    const auto* note = std::get_if<Note>(&chordNote);
-                    marks.push_back(
-                        note ? accidentals.next(note->pitch, note->accidentalDisplay, tieTargets.contains(note->id))
-                             : std::nullopt);
-                }
-                event.shape = chordShape(event, clefAt(plan, event.tick), plan.severalVoices, marks, beamUp[e]);
-            }
-            else
-            {
-                event.shape = restShape(event, plan.severalVoices);
-            }
-        }
-
+        // Onsets on any staff.
         std::map<Tick, Onset> onsets;
-        for (std::size_t i = 0; i < plan.events.size(); ++i)
-        {
-            const PlacedEvent& event = plan.events[i];
-            const bool fullMeasure = event.rest && event.rest->fullMeasure.value_or(false);
-            const Tick tick = fullMeasure ? 0 : event.tick;
-            Onset& onset = onsets[tick];
-            onset.tick = tick;
-            onset.events.push_back(i);
-            if (!fullMeasure) // centred in the measure instead
+        for (const StaffPlan& staffPlan : plan.staves)
+            for (const PlacedEvent& event : staffPlan.events)
             {
-                onset.left = std::max(onset.left, -event.shape.left);
-                onset.right = std::max(onset.right, event.shape.right);
+                const bool fullMeasure = isFullMeasureRest(event);
+                Onset& onset = onsets[fullMeasure ? 0 : event.tick];
+                onset.tick = fullMeasure ? 0 : event.tick;
+                if (!fullMeasure) // centred in the measure instead
+                {
+                    onset.left = std::max(onset.left, -event.shape.left);
+                    onset.right = std::max(onset.right, event.shape.right);
+                }
             }
-        }
         if (onsets.empty())
             onsets[0].tick = 0; // an empty measure still takes its length's room
 
@@ -670,16 +741,67 @@ private:
         }
         plan.lead += plan.onsets.front().left; // room for the first notes' accidentals
 
-        clef = clefAt(plan, std::numeric_limits<Tick>::max());
+        for (std::size_t s = 0; s < staves.size(); ++s)
+            staves[s].clef = clefAt(plan.staves[s], std::numeric_limits<Tick>::max());
         return plan;
+    }
+
+    void planEvents(const StaffContext& staff, StaffPlan& plan) const
+    {
+        std::set<int> voices;
+        if (plan.staffMeasure)
+            for (const Voice& voice : plan.staffMeasure->voices)
+            {
+                const std::size_t before = plan.events.size();
+                placeEvents(voice.events, 0, 1, 1, tpq, voice.index, plan.events);
+                if (plan.events.size() > before)
+                    voices.insert(voice.index);
+            }
+        plan.severalVoices = voices.size() > 1;
+
+        // In time order, so each note knows the accidentals before it in the measure.
+        std::stable_sort(plan.events.begin(), plan.events.end(),
+                         [](const PlacedEvent& a, const PlacedEvent& b) { return a.tick < b.tick; });
+
+        // Beam groups, and the stem direction each one shares.
+        plan.beams = beamGroups(plan.events);
+        std::vector<std::optional<bool>> beamUp(plan.events.size());
+        for (const std::vector<std::size_t>& group : plan.beams)
+        {
+            const bool up = groupStemUp(staff, plan, group);
+            for (const std::size_t e : group)
+                beamUp[e] = up;
+        }
+
+        MeasureAccidentals accidentals(plan.key);
+        for (std::size_t e = 0; e < plan.events.size(); ++e)
+        {
+            PlacedEvent& event = plan.events[e];
+            if (event.chord)
+            {
+                std::vector<std::optional<AccidentalMark>> marks;
+                for (const ChordNote& chordNote : event.chord->notes)
+                {
+                    const auto* note = std::get_if<Note>(&chordNote);
+                    marks.push_back(note ? accidentals.next(writtenPitch(note->pitch, staff.track->transposition),
+                                                            note->accidentalDisplay, tieTargets.contains(note->id))
+                                         : std::nullopt);
+                }
+                event.shape = chordShape(staff, plan, event, clefAt(plan, event.tick), marks, beamUp[e]);
+            }
+            else
+            {
+                event.shape = restShape(staff, plan, event);
+            }
+        }
     }
 
     // ── Emitting boxes ─────────────────────────────────────────────────────────
 
-    void addGlyph(const NodeId& nodeId, Part part, std::string glyph, Point origin)
+    void addGlyph(const NodeId& nodeId, Part part, std::string glyph, Point origin, double scale = 1)
     {
-        const Rect box = font.bbox(glyph).value_or(Rect {});
-        out.boxes.push_back({ nodeId, part, box.translated(origin), GlyphShape { std::move(glyph), origin } });
+        const Rect box = font.bbox(glyph).value_or(Rect {}).scaled(scale);
+        out.boxes.push_back({ nodeId, part, box.translated(origin), GlyphShape { std::move(glyph), origin, scale } });
     }
 
     void addLine(const NodeId& nodeId, Part part, Point from, Point to, double thickness)
@@ -694,24 +816,87 @@ private:
         out.boxes.push_back({ nodeId, Part::Beam, bounds, BeamShape { from, to, thickness } });
     }
 
-    // An event's shape, moved right by dx into the system.
-    void emitShape(const EventShape& shape, double dx)
+    // An event's shape, moved by `by` into the system.
+    void emitShape(const EventShape& shape, Point by)
     {
         for (const ShapeItem& item : shape.items)
         {
             if (const auto* glyph = std::get_if<GlyphShape>(&item.shape))
-                addGlyph(*item.nodeId, item.part, glyph->glyph, glyph->origin + Point { dx, 0 });
+                addGlyph(*item.nodeId, item.part, glyph->glyph, glyph->origin + by);
             else if (const auto* line = std::get_if<LineShape>(&item.shape))
-                addLine(*item.nodeId, item.part, line->from + Point { dx, 0 }, line->to + Point { dx, 0 },
-                        line->thickness);
+                addLine(*item.nodeId, item.part, line->from + by, line->to + by, line->thickness);
         }
     }
 
     void emitStaffLines()
     {
-        for (int i = 0; i < lines; ++i)
-            addLine(staff.id, Part::StaffLine, { 0, double(i) }, { out.width, double(i) },
-                    engraving.staffLineThickness);
+        for (const StaffContext& staff : staves)
+            for (int i = 0; i < staff.lines; ++i)
+                addLine(staff.staff->id, Part::StaffLine, { 0, staff.y + i }, { out.width, staff.y + i },
+                        engraving.staffLineThickness);
+    }
+
+    // Where a staff's barlines start and end: its outer lines, or a space above and
+    // below a one-line staff.
+    static double barTop(const StaffContext& staff) { return staff.y + (staff.lines > 1 ? 0.0 : -1.0); }
+    static double barBottom(const StaffContext& staff) { return staff.y + (staff.lines > 1 ? staff.lines - 1.0 : 1.0); }
+
+    // The staves of one track, which barlines and braces join.
+    struct TrackSpan
+    {
+        const Track* track;
+        double top;
+        double bottom;
+        int staves;
+    };
+
+    std::vector<TrackSpan> trackSpans() const
+    {
+        std::vector<TrackSpan> spans;
+        for (const StaffContext& staff : staves)
+        {
+            auto it = std::find_if(spans.begin(), spans.end(),
+                                   [&](const TrackSpan& span) { return span.track == staff.track; });
+            if (it == spans.end())
+                spans.push_back({ staff.track, barTop(staff), barBottom(staff), 1 });
+            else
+            {
+                it->top = std::min(it->top, barTop(staff));
+                it->bottom = std::max(it->bottom, barBottom(staff));
+                ++it->staves;
+            }
+        }
+        return spans;
+    }
+
+    // A line joining every staff at the system's start, and a brace before each
+    // instrument with several staves.
+    void emitSystemStart()
+    {
+        const std::vector<TrackSpan> spans = trackSpans();
+        if (staves.size() > 1)
+        {
+            double top = std::numeric_limits<double>::max();
+            double bottom = std::numeric_limits<double>::lowest();
+            for (const TrackSpan& span : spans)
+            {
+                top = std::min(top, span.top);
+                bottom = std::max(bottom, span.bottom);
+            }
+            const double thin = engraving.thinBarlineThickness;
+            addLine(plans.front().measure->id, Part::Barline, { thin / 2, top }, { thin / 2, bottom }, thin);
+        }
+
+        const std::optional<Rect> brace = font.bbox("brace");
+        for (const TrackSpan& span : spans)
+            if (span.staves > 1 && brace && brace->height() > 0)
+            {
+                // The brace glyph is one staff tall, its origin at its bottom.
+                const double scale = (span.bottom - span.top) / brace->height();
+                const Point origin { -in.header.braceGapSp - brace->right * scale,
+                                     span.bottom - brace->bottom * scale };
+                addGlyph(span.track->id, Part::Brace, "brace", origin, scale);
+            }
     }
 
     // The space an onset gets once the system is justified.
@@ -724,34 +909,39 @@ private:
 
     double emitMeasure(const MeasurePlan& plan, double left)
     {
-        emitSignatures(plan, left);
-
         // Where each onset goes, and the barline.
-        std::vector<double> onsetX;
+        std::map<Tick, double> onsetX;
         double x = left + plan.lead;
         for (const Onset& onset : plan.onsets)
         {
-            onsetX.push_back(x);
+            onsetX[onset.tick] = x;
             x += space(onset);
         }
         const double right = x;
         const double contentLeft = left + plan.lead;
 
-        std::vector<double> eventX(plan.events.size());
-        for (std::size_t i = 0; i < plan.onsets.size(); ++i)
-            for (const std::size_t e : plan.onsets[i].events)
+        for (std::size_t s = 0; s < staves.size(); ++s)
+        {
+            const StaffContext& staff = staves[s];
+            const StaffPlan& staffPlan = plan.staves[s];
+            emitSignatures(staff, staffPlan, plan, left);
+
+            std::vector<double> eventX(staffPlan.events.size());
+            for (std::size_t e = 0; e < staffPlan.events.size(); ++e)
             {
-                const PlacedEvent& event = plan.events[e];
-                if (event.rest && event.rest->fullMeasure.value_or(false))
+                const PlacedEvent& event = staffPlan.events[e];
+                if (isFullMeasureRest(event))
                     eventX[e] = (contentLeft + right) / 2 - (event.shape.left + event.shape.right) / 2;
                 else
-                    eventX[e] = onsetX[i];
-                emitShape(event.shape, eventX[e]);
+                    eventX[e] = onsetX.at(event.tick);
+                emitShape(event.shape, { eventX[e], staff.y });
             }
-        for (const std::vector<std::size_t>& group : plan.beams)
-            emitBeamGroup(plan, group, eventX);
+            for (const std::vector<std::size_t>& group : staffPlan.beams)
+                emitBeamGroup(staff, staffPlan, group, eventX);
+        }
 
-        emitBarline(*plan.measure, right);
+        for (const TrackSpan& span : trackSpans())
+            emitBarline(*plan.measure, right, span.top, span.bottom);
         out.measures.push_back({ plan.measure->id, left, right });
         return right;
     }
@@ -760,7 +950,7 @@ private:
     // (flat when an inner note is nearer to it than both ends), then sits as near the
     // notes as the shortest stem allows. Secondary beams join neighbours that both have
     // them; a chord alone at its level gets a hook, pointing into the group.
-    void emitBeamGroup(const MeasurePlan& plan, const std::vector<std::size_t>& group,
+    void emitBeamGroup(const StaffContext& staff, const StaffPlan& plan, const std::vector<std::size_t>& group,
                        const std::vector<double>& eventX)
     {
         struct StemAt
@@ -796,8 +986,9 @@ private:
                 rise = 0;
         const double slope = span > 0 ? rise / span : 0.0;
 
-        // The beam's outer edge is base + slope * (x - first.x). Every stem gets at least
-        // stemSp, and room for its beams with clearanceSp between them and the note.
+        // The beam's outer edge is base + slope * (x - first.x), in the staff's own
+        // coordinates. Every stem gets at least stemSp, and room for its beams with
+        // clearanceSp between them and the note.
         double base = up ? std::numeric_limits<double>::max() : std::numeric_limits<double>::lowest();
         for (const StemAt& s : stems)
         {
@@ -806,15 +997,16 @@ private:
             base = up ? std::min(base, candidate) : std::max(base, candidate);
         }
         // Like an unbeamed stem, the beam reaches at least the middle line.
-        const double middle = middleLineY(lines);
+        const double middle = middleLineY(staff.lines);
         const double nearestEnd = up ? std::min(base, base + slope * span) : std::max(base, base + slope * span);
         if (up ? nearestEnd > middle : nearestEnd < middle)
             base += middle - nearestEnd;
-        auto edgeAt = [&](double x) { return base + slope * (x - first.x); };
+        const double dy = staff.y;
+        auto edgeAt = [&](double x) { return dy + base + slope * (x - first.x); };
 
         const double stemThickness = engraving.stemThickness;
         for (const StemAt& s : stems)
-            addLine(*s.chordId, Part::Stem, { s.x, s.stem.startY }, { s.x, edgeAt(s.x) }, stemThickness);
+            addLine(*s.chordId, Part::Stem, { s.x, dy + s.stem.startY }, { s.x, edgeAt(s.x) }, stemThickness);
 
         const double half = stemThickness / 2;
         const double hook = glyphRight("noteheadBlack");
@@ -849,20 +1041,22 @@ private:
         }
     }
 
-    void emitSignatures(const MeasurePlan& plan, double left)
+    void emitSignatures(const StaffContext& staff, const StaffPlan& staffPlan, const MeasurePlan& plan, double left)
     {
-        if (plan.clef)
-            addGlyph(plan.clef->id, Part::Clef, clefGlyph(*plan.clef, font),
-                     { left + plan.clefX, clefY(*plan.clef, lines) });
+        const double dy = staff.y;
+        if (staffPlan.clef)
+            addGlyph(staffPlan.clef->id, Part::Clef, clefGlyph(*staffPlan.clef, font),
+                     { left + plan.clefX, dy + clefY(*staffPlan.clef, staff.lines) });
 
-        if (plan.key)
+        if (staffPlan.drawKey)
         {
-            const Clef keyClef = clefAt(plan, 0);
-            const std::string glyph = plan.key->accidentals > 0 ? "accidentalSharp" : "accidentalFlat";
+            const NodeId& keyId = plan.keyId;
+            const Clef keyClef = clefAt(staffPlan, 0);
+            const std::string glyph = staffPlan.key > 0 ? "accidentalSharp" : "accidentalFlat";
             double x = left + plan.keyX;
-            for (const double y : keySignatureYs(plan.key->accidentals, keyClef, lines))
+            for (const double y : keySignatureYs(staffPlan.key, keyClef, staff.lines))
             {
-                addGlyph(plan.key->id, Part::KeySignature, glyph, { x, y });
+                addGlyph(keyId, Part::KeySignature, glyph, { x, dy + y });
                 x += glyphRight(glyph) + in.header.keyAccidentalGapSp;
             }
         }
@@ -870,7 +1064,7 @@ private:
         if (plan.time)
         {
             const double width = timeWidth(*plan.time);
-            const double middle = middleLineY(lines);
+            const double middle = dy + middleLineY(staff.lines);
             auto emitDigits = [&](const std::string& digits, double y) {
                 double x = left + plan.timeX + (width - digitsWidth(digits)) / 2;
                 for (const char digit : digits)
@@ -927,11 +1121,11 @@ private:
                         GlyphShape { "augmentationDot", { x + i * (dotWidth + in.notes.dotDotGapSp), y } });
     }
 
-    const KitEntry* kitEntry(const NodeId& id) const
+    static const KitEntry* kitEntry(const StaffContext& staff, const NodeId& id)
     {
-        if (!track.kit)
+        if (!staff.track->kit)
             return nullptr;
-        for (const KitEntry& entry : *track.kit)
+        for (const KitEntry& entry : *staff.track->kit)
             if (entry.id == id)
                 return &entry;
         return nullptr;
@@ -941,30 +1135,33 @@ private:
     // flag, dots and accidentals. `marks` has one entry per note of the chord. A beamed
     // chord (beamUp set) takes its stem direction from its group, and has no stem or
     // flag yet: the stem waits for the beam.
-    EventShape chordShape(const PlacedEvent& event, const Clef& noteClef, bool severalVoices,
-                          const std::vector<std::optional<AccidentalMark>>& marks, std::optional<bool> beamUp) const
+    EventShape chordShape(const StaffContext& staff, const StaffPlan& plan, const PlacedEvent& event,
+                          const Clef& noteClef, const std::vector<std::optional<AccidentalMark>>& marks,
+                          std::optional<bool> beamUp) const
     {
         const Chord& chord = *event.chord;
         const DurationType type = chord.duration.type;
+        const int lines = staff.lines;
         const double middle = middleLineY(lines);
         const double thickness = engraving.stemThickness;
         EventShape shape;
 
         std::vector<Head> heads;
         for (std::size_t i = 0; i < chord.notes.size(); ++i)
-            std::visit(Overloaded {
-                           [&](const Note& note) {
-                               heads.push_back({ &note.id, noteheadGlyph(type), noteY(chord.notes[i], noteClef) });
-                               heads.back().accidental = i < marks.size() ? marks[i] : std::nullopt;
-                           },
-                           [&](const UnpitchedNote& note) {
-                               const KitEntry* entry = kitEntry(note.kitEntryId);
-                               heads.push_back(
-                                   { &note.id, kitNoteheadGlyph(entry ? entry->notehead : Notehead::Normal, type, font),
-                                     noteY(chord.notes[i], noteClef) });
-                           },
-                       },
-                       chord.notes[i]);
+            std::visit(
+                Overloaded {
+                    [&](const Note& note) {
+                        heads.push_back({ &note.id, noteheadGlyph(type), noteY(staff, chord.notes[i], noteClef) });
+                        heads.back().accidental = i < marks.size() ? marks[i] : std::nullopt;
+                    },
+                    [&](const UnpitchedNote& note) {
+                        const KitEntry* entry = kitEntry(staff, note.kitEntryId);
+                        heads.push_back({ &note.id,
+                                          kitNoteheadGlyph(entry ? entry->notehead : Notehead::Normal, type, font),
+                                          noteY(staff, chord.notes[i], noteClef) });
+                    },
+                },
+                chord.notes[i]);
         if (heads.empty())
             return shape;
         for (Head& head : heads)
@@ -976,9 +1173,9 @@ private:
         const double bottomY = bottomIt->y;
 
         const bool hasStem = type <= DurationType::Half; // whole notes and longer have none
-        const bool up = beamUp          ? *beamUp
-                        : severalVoices ? event.voice % 2 == 0
-                                        : (bottomY - middle) > (middle - topY); // most of it below the middle
+        const bool up = beamUp               ? *beamUp
+                        : plan.severalVoices ? event.voice % 2 == 0
+                                             : (bottomY - middle) > (middle - topY); // most of it below the middle
 
         // Seconds: two notes a step apart can't share a column. Going away from the stem's
         // start (from the bottom for an up stem), a note a second from one in the normal
@@ -1064,7 +1261,7 @@ private:
         // the lower voice). Two notes wanting the same space share one dot.
         if (chord.duration.dots > 0)
         {
-            const bool lowerVoice = severalVoices && !up;
+            const bool lowerVoice = plan.severalVoices && !up;
             std::vector<std::pair<const NodeId*, double>> rows;
             for (const Head& head : heads)
             {
@@ -1159,7 +1356,7 @@ private:
     }
 
     // A rest around x = 0, with its dots. A full-measure rest is centred when emitted.
-    EventShape restShape(const PlacedEvent& event, bool severalVoices) const
+    EventShape restShape(const StaffContext& staff, const StaffPlan& plan, const PlacedEvent& event) const
     {
         const Rest& rest = *event.rest;
         const bool fullMeasure = rest.fullMeasure.value_or(false);
@@ -1167,10 +1364,10 @@ private:
 
         // SMuFL rests hang or sit on the line at their origin: a whole rest hangs from
         // the line above the middle, the others centre on the middle line.
-        double y = middleLineY(lines);
+        double y = middleLineY(staff.lines);
         if (glyph == "restWhole")
             y -= 1;
-        if (severalVoices)
+        if (plan.severalVoices)
             y += event.voice % 2 == 0 ? -1 : 1;
 
         EventShape shape;
@@ -1181,10 +1378,8 @@ private:
         return shape;
     }
 
-    void emitBarline(const Measure& measure, double right)
+    void emitBarline(const Measure& measure, double right, double top, double bottom)
     {
-        const double top = lines > 1 ? 0.0 : -1.0;
-        const double bottom = lines > 1 ? lines - 1.0 : 1.0;
         auto line = [&](double centreX, double thickness) {
             addLine(measure.id, Part::Barline, { centreX, top }, { centreX, bottom }, thickness);
         };
@@ -1208,19 +1403,15 @@ private:
     }
 
     const SystemInput& in;
-    const Track& track;
-    const Staff& staff;
     const SmuflFont& font;
     const EngravingDefaults& engraving;
-    const int lines;
     const int tpq;
-    std::map<std::string_view, const StaffMeasure*> staffMeasures;
+    std::vector<StaffContext> staves;
     std::set<NodeId, std::less<>> tieTargets;
 
     // In force where planning has got to.
     std::optional<TimeSignature> timeSig;
     std::optional<KeySignature> key;
-    Clef clef { .id = {}, .type = ClefType::G, .line = 2, .octaveChange = 0 };
 
     std::vector<MeasurePlan> plans;
     double stretch = 1; // > 1: every space grows by this factor
@@ -1230,21 +1421,8 @@ private:
 
 } // namespace
 
-SystemLayout layoutSystem(const SystemInput& input)
-{
-    const std::size_t measureTotal = input.music.measures.size();
-    if (input.measureCount == 0 || input.firstMeasure >= measureTotal
-        || input.measureCount > measureTotal - input.firstMeasure)
-        throw std::invalid_argument("measures " + std::to_string(input.firstMeasure) + " + "
-                                    + std::to_string(input.measureCount) + " are outside the score ("
-                                    + std::to_string(measureTotal) + " measures)");
+SystemLayout layoutSystem(const SystemInput& input) { return SystemBuilder(input).build(); }
 
-    for (const Track& track : input.music.tracks)
-        for (const Staff& staff : track.staves)
-            if (staff.id == input.staffId)
-                return SystemBuilder(input, track, staff).build();
-
-    throw std::invalid_argument("no staff with id \"" + input.staffId + "\"");
-}
+std::vector<MeasureWidth> measureWidths(const SystemInput& input) { return SystemBuilder(input).widths(); }
 
 } // namespace msd

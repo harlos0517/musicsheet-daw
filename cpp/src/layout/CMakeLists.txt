@@ -4,6 +4,8 @@ add_library(msd_layout STATIC
     Accidentals.cpp
     Accidentals.h
     Geometry.h
+    PageLayout.cpp
+    PageLayout.h
     SmuflFont.cpp
     SmuflFont.h
     SmuflGlyphNames.cpp
@@ -11,7 +13,9 @@ add_library(msd_layout STATIC
     StaffPosition.cpp
     StaffPosition.h
     SystemLayout.cpp
-    SystemLayout.h)
+    SystemLayout.h
+    Transpose.cpp
+    Transpose.h)
 
 target_include_directories(msd_layout PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_compile_features(msd_layout PUBLIC cxx_std_20)

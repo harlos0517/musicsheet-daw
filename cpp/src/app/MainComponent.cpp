@@ -6,7 +6,7 @@
 
 #include "BinaryData.h"
 #include "core/json/Load.h"
-#include "layout/SystemLayout.h"
+#include "layout/PageLayout.h"
 
 namespace msd
 {
@@ -23,17 +23,18 @@ std::unique_ptr<MusicFont> makeLeland()
         SmuflGlyphNames::parse(binary(BinaryData::glyphnames_json, BinaryData::glyphnames_jsonSize)));
 }
 
-LayoutProfile defaultProfile()
+LayoutSetup defaultSetup()
 {
-    return parseLayoutSetup(binary(BinaryData::default_layout_json, BinaryData::default_layout_jsonSize))
-        .layoutProfiles.at(0);
+    return parseLayoutSetup(binary(BinaryData::default_layout_json, BinaryData::default_layout_jsonSize));
 }
+
+double millisecondsSince(double start) { return juce::Time::getMillisecondCounterHiRes() - start; }
 
 } // namespace
 
 MainComponent::MainComponent(const juce::String& scoreToOpen)
     : font(makeLeland())
-    , profile(defaultProfile())
+    , setup(defaultSetup())
     , scoreView(*font)
 {
     setWantsKeyboardFocus(true);
@@ -41,18 +42,13 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     openButton.onClick = [this] { chooseScore(); };
     fileLabel.setText("No score", juce::dontSendNotification);
     fileLabel.setMinimumHorizontalScale(0.7f);
-    staffBox.setTextWhenNothingSelected("Staff");
-    staffBox.onChange = [this] { relayout(); };
-
-    firstSlider.setRange(1, 1, 1);
-    firstSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 44, 24);
-    firstSlider.onValueChange = [this] { relayout(); };
-    countSlider.setRange(1, 16, 1);
-    countSlider.setValue(4, juce::dontSendNotification);
-    countSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 36, 24);
-    countSlider.onValueChange = [this] { relayout(); };
-    zoomSlider.setRange(4, 40, 0.5);
-    zoomSlider.setValue(12, juce::dontSendNotification);
+    reflowButton.setTooltip("Break the music into systems and pages again");
+    reflowButton.onClick = [this] {
+        reflowScore();
+        relayout();
+    };
+    zoomSlider.setRange(2, 30, 0.5);
+    zoomSlider.setValue(6, juce::dontSendNotification);
     zoomSlider.onValueChange = [this] { scoreView.setZoom(static_cast<float>(zoomSlider.getValue())); };
     boundsToggle.onClick = [this] { scoreView.setShowBounds(boundsToggle.getToggleState()); };
 
@@ -60,16 +56,16 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
         statusLabel.setText(text.isEmpty() ? status : text, juce::dontSendNotification);
     };
     viewport.setViewedComponent(&scoreView, false);
+    viewport.setScrollBarsShown(true, true);
 
     for (juce::Component* c : std::initializer_list<juce::Component*> {
-             &openButton, &fileLabel, &staffBox, &firstLabel, &firstSlider, &countLabel, &countSlider, &zoomLabel,
-             &zoomSlider, &boundsToggle, &statusLabel, &viewport })
+             &openButton, &fileLabel, &reflowButton, &zoomLabel, &zoomSlider, &boundsToggle, &statusLabel, &viewport })
         addAndMakeVisible(c);
 
-    setSize(1200, 420);
+    setSize(1000, 800);
 
-    // Command line: [score.music.json] [staff ID] [first measure]. Without a score, in
-    // development, an exported example.
+    // Command line: [score.music.json] [page to show]. Without a score, in development,
+    // an exported example.
     const juce::StringArray args = juce::StringArray::fromTokens(scoreToOpen, true);
     juce::File start = juce::File(MSD_EXPORTED_SCORES_DIR).getChildFile("melody.music.json");
     if (!args.isEmpty())
@@ -82,13 +78,9 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     openScore(start);
     if (args.size() > 1)
     {
-        const auto it = std::find(staffIds.begin(), staffIds.end(), args[1].unquoted().toStdString());
-        if (it != staffIds.end())
-            staffBox.setSelectedId(static_cast<int>(it - staffIds.begin()) + 1, juce::dontSendNotification);
+        const int page = std::max(1, args[1].unquoted().getIntValue());
+        viewport.setViewPosition(0, scoreView.pageTop(static_cast<std::size_t>(page - 1)));
     }
-    if (args.size() > 2)
-        firstSlider.setValue(args[2].unquoted().getIntValue(), juce::dontSendNotification);
-    relayout();
 }
 
 MainComponent::~MainComponent() = default;
@@ -109,11 +101,9 @@ void MainComponent::resized()
         return juce::FlexItem(c).withWidth(width).withHeight(26).withMargin({ 0, 4, 0, 4 });
     };
     toolbar.items = {
-        item(openButton, 80),   item(fileLabel, 160).withFlex(1).withMinWidth(100),
-        item(staffBox, 220),    item(firstLabel, 44),
-        item(firstSlider, 100), item(countLabel, 70),
-        item(countSlider, 92),  item(zoomLabel, 44),
-        item(zoomSlider, 140),  item(boundsToggle, 72),
+        item(openButton, 80),   item(fileLabel, 200).withFlex(1).withMinWidth(100),
+        item(reflowButton, 80), item(zoomLabel, 44),
+        item(zoomSlider, 160),  item(boundsToggle, 72),
     };
     toolbar.performLayout(area.removeFromTop(40));
 
@@ -159,64 +149,67 @@ void MainComponent::openScore(const juce::File& file)
     catch (const std::exception& e)
     {
         music.reset();
-        staffIds.clear();
-        staffBox.clear(juce::dontSendNotification);
         scoreView.clear();
         setStatus(juce::String::fromUTF8(e.what()));
         return;
     }
-
     fileLabel.setText(file.getFileName(), juce::dontSendNotification);
 
-    staffIds.clear();
-    staffBox.clear(juce::dontSendNotification);
-    for (const Track& track : music->tracks)
-        for (std::size_t i = 0; i < track.staves.size(); ++i)
-        {
-            juce::String name = juce::String::fromUTF8(track.instrumentName.c_str());
-            if (track.staves.size() > 1)
-                name << " " << static_cast<int>(i + 1);
-            staffIds.push_back(track.staves[i].id);
-            staffBox.addItem(name, static_cast<int>(staffIds.size()));
-        }
-
-    const auto measures = static_cast<double>(std::max<std::size_t>(music->measures.size(), 1));
-    firstSlider.setRange(1, std::max(measures, 2.0), 1); // a range needs two ends
-    firstSlider.setValue(1, juce::dontSendNotification);
-    staffBox.setSelectedId(1, juce::dontSendNotification);
+    // A new score has no flow yet: the first layout reflows.
+    setup.layouts.at(0).flow.reset();
+    reflowScore();
     relayout();
+    viewport.setViewPosition(0, 0);
 }
 
-double MainComponent::systemWidthSp() const
+const LayoutProfile& MainComponent::profile() const
 {
-    const LayoutProfile::Page& page = profile.page;
-    return (page.widthMm - page.margins.left - page.margins.right) / profile.staffSpaceMm;
+    const std::string& id = setup.layouts.at(0).layoutProfileId;
+    for (const LayoutProfile& candidate : setup.layoutProfiles)
+        if (candidate.id == id)
+            return candidate;
+    return setup.layoutProfiles.at(0);
+}
+
+void MainComponent::reflowScore()
+{
+    if (!music)
+        return;
+    Layout& layout = setup.layouts.at(0);
+    try
+    {
+        const double started = juce::Time::getMillisecondCounterHiRes();
+        layout.flow = reflow({ .music = *music, .profile = profile(), .font = font->metadata(), .layout = layout });
+        reflowMs = millisecondsSince(started);
+    }
+    catch (const std::exception& e)
+    {
+        layout.flow.reset();
+        setStatus(juce::String::fromUTF8(e.what()));
+    }
 }
 
 void MainComponent::relayout()
 {
-    if (!music || staffIds.empty() || staffBox.getSelectedId() <= 0)
+    const Layout& layout = setup.layouts.at(0);
+    if (!music || !layout.flow)
         return;
-
-    const std::size_t total = music->measures.size();
-    const std::size_t first = std::min(static_cast<std::size_t>(firstSlider.getValue()), total) - 1;
-    const std::size_t count = std::min(static_cast<std::size_t>(countSlider.getValue()), total - first);
-    const NodeId& staffId = staffIds[static_cast<std::size_t>(staffBox.getSelectedId() - 1)];
-
     try
     {
-        SystemLayout layout = layoutSystem({ .music = *music,
-                                             .profile = profile,
-                                             .font = font->metadata(),
-                                             .staffId = staffId,
-                                             .firstMeasure = first,
-                                             .measureCount = count,
-                                             .width = systemWidthSp() });
-        const auto boxes = layout.boxes.size();
-        scoreView.setSystem(std::move(layout));
-        setStatus(juce::String::fromUTF8(music->title.c_str()) + ": measures " + juce::String(first + 1) + "-"
-                  + juce::String(first + count) + ", " + juce::String(boxes)
-                  + " boxes. Hover a symbol to see its node.");
+        const double started = juce::Time::getMillisecondCounterHiRes();
+        std::vector<PageLayout> pages = layoutPages(
+            { .music = *music, .profile = profile(), .font = font->metadata(), .layout = layout }, *layout.flow);
+        const double layoutMs = millisecondsSince(started);
+
+        std::size_t systems = 0;
+        for (const PageLayout& page : pages)
+            systems += page.systems.size();
+        const std::size_t pageCount = pages.size();
+        scoreView.setPages(std::move(pages));
+        setStatus(juce::String::fromUTF8(music->title.c_str()) + ": " + juce::String::fromUTF8(profile().name.c_str())
+                  + ", " + juce::String(pageCount) + " pages, " + juce::String(systems) + " systems (reflow "
+                  + juce::String(juce::roundToInt(reflowMs)) + " ms, layout " + juce::String(juce::roundToInt(layoutMs))
+                  + " ms). Hover a symbol to see its node.");
     }
     catch (const std::exception& e)
     {

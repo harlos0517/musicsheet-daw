@@ -1,15 +1,17 @@
 #pragma once
 
-// Lays out one system of one staff: the result is a list of boxes, each saying which
+// Lays out one system: some measures of some staves, spaced together so that notes
+// sounding at the same time line up. The result is a list of boxes, each saying which
 // MusicData node it came from and what to draw. Nothing here knows about JUCE or a
 // window; painting (cpp/src/app) only draws what the boxes say.
 //
-// Which measures make up the system is the caller's choice. Later it comes from
-// Layout.flow; this function only spaces the music inside the system it is given,
-// so editing a note never moves a system.
+// Which measures and staves make up the system, and where each staff sits, is the
+// caller's choice: it comes from Layout.flow (see PageLayout.h). This function only
+// spaces the music inside the system it is given, so editing a note never moves a
+// system.
 //
 // Coordinates are in staff spaces (sp): x from the system's left edge, y from the top
-// staff line, down positive.
+// line of the system's first staff, down positive.
 
 #include <cstddef>
 #include <optional>
@@ -30,7 +32,8 @@ namespace msd
 enum class Part {
     StaffLine,     // node: the staff
     LedgerLine,    // node: the chord
-    Barline,       // node: the measure
+    Barline,       // node: the measure; the line at a system's start: its first measure
+    Brace,         // node: the track
     Clef,          // node: the clef
     KeySignature,  // node: the key signature; one box per accidental
     TimeSignature, // node: the time signature; one box per digit
@@ -48,6 +51,7 @@ struct GlyphShape
 {
     std::string glyph; // SMuFL name, e.g. "noteheadBlack"
     Point origin;
+    double scale = 1; // 1: the font's own size. Braces grow to fit their staves.
 };
 
 // A straight line of a given thickness, with square ends at `from` and `to`.
@@ -82,11 +86,17 @@ struct MeasureSlot
     double right = 0; // this measure's barline
 };
 
-struct SystemLayout
+struct StaffSlot
 {
     NodeId staffId;
-    int staffLines = 5;
+    double y = 0; // its top line
+    int lines = 5;
+};
+
+struct SystemLayout
+{
     double width = 0;
+    std::vector<StaffSlot> staves;
     std::vector<MeasureSlot> measures;
     std::vector<LayoutBox> boxes; // in drawing order
 };
@@ -99,6 +109,7 @@ struct HeaderSpacing
     double betweenItemsSp = 1.0;     // clef → key → time signature
     double keyAccidentalGapSp = 0.15; // between the accidentals of a key signature
     double toFirstNoteSp = 2.0;      // last header item → first note
+    double braceGapSp = 0.3;         // brace → system start
 };
 
 // Gaps around notes, in sp. LayoutProfile has no fields for these yet either.
@@ -121,23 +132,42 @@ struct BeamSpacing
     double maxSlope = 0.25;   // and per sp of its length
 };
 
+struct SystemStaff
+{
+    NodeId staffId;
+    double y = 0; // its top line, from the top line of the system's first staff
+};
+
 struct SystemInput
 {
     const MusicData& music;
     const LayoutProfile& profile;
     const SmuflFont& font;
-    NodeId staffId;
-    std::size_t firstMeasure = 0; // index into music.measures
+    std::vector<SystemStaff> staves; // in score order
+    std::size_t firstMeasure = 0;    // index into music.measures
     std::size_t measureCount = 1;
-    std::optional<double> width;  // stretch or squeeze the notes to fill it; empty: natural width.
-                                  // Never squeezed until symbols touch: a system that does not
-                                  // fit then comes out wider (overfull, until the next reflow).
+    std::optional<double> width; // stretch or squeeze the notes to fill it; empty: natural width.
+                                 // Never squeezed until symbols touch: a system that does not
+                                 // fit then comes out wider (overfull, until the next reflow).
     HeaderSpacing header {};
     NoteSpacing notes {};
     BeamSpacing beams {};
 };
 
-// Throws std::invalid_argument for an unknown staff or a measure range outside the score.
+// Throws std::invalid_argument for no staves, an unknown staff, or a measure range
+// outside the score.
 SystemLayout layoutSystem(const SystemInput& input);
+
+// The natural width of a measure: as the first of a system (with the clef and key at
+// its start), and after another measure. A system's natural width is its first
+// measure's `first` plus the others' `other`.
+struct MeasureWidth
+{
+    double first = 0;
+    double other = 0;
+};
+
+// One per measure in input's range; input.width is ignored. Throws like layoutSystem.
+std::vector<MeasureWidth> measureWidths(const SystemInput& input);
 
 } // namespace msd

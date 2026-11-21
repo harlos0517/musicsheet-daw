@@ -103,7 +103,7 @@ SystemLayout layOut(const MusicData& music)
     return layoutSystem({ .music = music,
                           .profile = defaultProfile(),
                           .font = leland(),
-                          .staffId = "s1",
+                          .staves = { { "s1" } },
                           .measureCount = music.measures.size() });
 }
 
@@ -341,7 +341,7 @@ TEST_CASE("squeezing stops where symbols would touch", "[layout][notes]")
                  });
     auto layOutAt = [&](std::optional<double> width) {
         return layoutSystem(
-            { .music = music, .profile = defaultProfile(), .font = leland(), .staffId = "s1", .width = width });
+            { .music = music, .profile = defaultProfile(), .font = leland(), .staves = { { "s1" } }, .width = width });
     };
     const double padding = defaultProfile().padding.collisionSp;
     auto noTouching = [&](const SystemLayout& layout) {

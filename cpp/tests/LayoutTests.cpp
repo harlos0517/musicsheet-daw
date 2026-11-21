@@ -88,7 +88,7 @@ SystemLayout layOut(std::size_t first, std::size_t count, std::optional<double> 
     return layoutSystem({ .music = twoMeasures(),
                           .profile = defaultProfile(),
                           .font = leland(),
-                          .staffId = "s1",
+                          .staves = { { "s1" } },
                           .firstMeasure = first,
                           .measureCount = count,
                           .width = width });
@@ -265,8 +265,11 @@ TEST_CASE("a system that starts later repeats the clef and key, not the time", "
 TEST_CASE("bad requests throw", "[layout]")
 {
     CHECK_THROWS_AS(
-        layoutSystem({ .music = twoMeasures(), .profile = defaultProfile(), .font = leland(), .staffId = "nope" }),
+        layoutSystem(
+            { .music = twoMeasures(), .profile = defaultProfile(), .font = leland(), .staves = { { "nope" } } }),
         std::invalid_argument);
+    CHECK_THROWS_AS(layoutSystem({ .music = twoMeasures(), .profile = defaultProfile(), .font = leland() }),
+                    std::invalid_argument); // no staves
     CHECK_THROWS_AS(layOut(1, 2), std::invalid_argument);
 }
 
@@ -306,7 +309,7 @@ TEST_CASE("every exported score lays out", "[.][exported]")
                 REQUIRE_NOTHROW(layout = layoutSystem({ .music = music,
                                                         .profile = defaultProfile(),
                                                         .font = leland(),
-                                                        .staffId = staff.id,
+                                                        .staves = { { staff.id } },
                                                         .measureCount = count,
                                                         .width = 150.0 }));
                 CHECK(layout.measures.size() == count);

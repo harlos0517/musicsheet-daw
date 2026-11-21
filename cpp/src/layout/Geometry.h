@@ -27,6 +27,7 @@ struct Rect
     double height() const { return bottom - top; }
 
     Rect translated(Point by) const { return { left + by.x, top + by.y, right + by.x, bottom + by.y }; }
+    Rect scaled(double factor) const { return { left * factor, top * factor, right * factor, bottom * factor }; }
 
     Rect united(const Rect& other) const
     {

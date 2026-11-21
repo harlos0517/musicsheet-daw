@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <optional>
-#include <vector>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -12,14 +11,13 @@
 
 #include "MusicFont.h"
 #include "ScoreView.h"
-#include "core/types/LayoutProfile.h"
+#include "core/types/LayoutSetup.h"
 #include "core/types/MusicData.h"
 
 namespace msd
 {
 
-// The window's content: a toolbar to pick a score, staff and measures, and the
-// score view below it.
+// The window's content: a toolbar to open a score and reflow it, and its pages below.
 class MainComponent final : public juce::Component
 {
 public:
@@ -33,23 +31,20 @@ public:
 private:
     void chooseScore();
     void openScore(const juce::File& file);
+    void reflowScore();
     void relayout();
     void setStatus(const juce::String& text);
-    double systemWidthSp() const;
+    const LayoutProfile& profile() const; // the layout's, or the first one
 
     // Declared before scoreView, which keeps a reference to it.
     std::unique_ptr<MusicFont> font;
-    LayoutProfile profile;
+    LayoutSetup setup; // the default profile and the full-score layout, with its flow
     std::optional<MusicData> music;
-    std::vector<NodeId> staffIds; // by staffBox item ID - 1
+    double reflowMs = 0;
 
     juce::TextButton openButton { "Open..." };
     juce::Label fileLabel;
-    juce::ComboBox staffBox;
-    juce::Label firstLabel { {}, "From" };
-    juce::Slider firstSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
-    juce::Label countLabel { {}, "Measures" };
-    juce::Slider countSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
+    juce::TextButton reflowButton { "Reflow" };
     juce::Label zoomLabel { {}, "Zoom" };
     juce::Slider zoomSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::ToggleButton boundsToggle { "Boxes" };

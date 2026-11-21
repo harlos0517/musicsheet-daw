@@ -8,10 +8,7 @@ namespace msd
 namespace
 {
 
-// Room around the system, in sp: ledger lines and stems reach above and below the staff.
-constexpr float marginXSp = 4.0f;
-constexpr float marginAboveSp = 8.0f;
-constexpr float marginBelowSp = 8.0f;
+constexpr double gapSp = 6.0; // around and between pages
 
 juce::Rectangle<float> toJuce(const Rect& r)
 {
@@ -28,6 +25,7 @@ juce::String partName(Part part)
     case Part::StaffLine: return "staff line";
     case Part::LedgerLine: return "ledger line";
     case Part::Barline: return "barline";
+    case Part::Brace: return "brace";
     case Part::Clef: return "clef";
     case Part::KeySignature: return "key signature";
     case Part::TimeSignature: return "time signature";
@@ -48,20 +46,25 @@ ScoreView::ScoreView(MusicFont& musicFont)
     setOpaque(true);
 }
 
-void ScoreView::setSystem(SystemLayout layout)
+void ScoreView::setPages(std::vector<PageLayout> newPages)
 {
-    system = std::move(layout);
+    pages = std::move(newPages);
+    pageTops.clear();
+    widthSp = 0;
+    double y = gapSp;
+    for (const PageLayout& page : pages)
+    {
+        pageTops.push_back(y);
+        y += page.heightSp + gapSp;
+        widthSp = std::max(widthSp, page.widthSp + 2 * gapSp);
+    }
+    heightSp = y;
     hovered.reset();
     updateSize();
     repaint();
 }
 
-void ScoreView::clear()
-{
-    system.reset();
-    hovered.reset();
-    repaint();
-}
+void ScoreView::clear() { setPages({}); }
 
 void ScoreView::setZoom(float pixelsPerSp)
 {
@@ -76,37 +79,65 @@ void ScoreView::setShowBounds(bool show)
     repaint();
 }
 
-juce::AffineTransform ScoreView::spToPixels() const
+int ScoreView::pageTop(std::size_t page) const
 {
-    return juce::AffineTransform::translation(marginXSp, marginAboveSp).scaled(zoom);
+    return page < pageTops.size() ? juce::roundToInt((pageTops[page] - gapSp / 2) * zoom) : 0;
 }
 
 void ScoreView::updateSize()
 {
-    if (!system)
-        return;
-    const float widthSp = static_cast<float>(system->width) + 2 * marginXSp;
-    const float heightSp = static_cast<float>(system->staffLines - 1) + marginAboveSp + marginBelowSp;
-    setSize(juce::roundToInt(widthSp * zoom), juce::roundToInt(heightSp * zoom));
+    setSize(juce::roundToInt(std::max(widthSp, 1.0) * zoom), juce::roundToInt(std::max(heightSp, 1.0) * zoom));
 }
+
+Point ScoreView::pageOrigin(std::size_t page) const { return { (widthSp - pages[page].widthSp) / 2, pageTops[page] }; }
 
 void ScoreView::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colours::white);
-    if (!system)
-        return;
+    g.fillAll(juce::Colour(0xff5f6b73));
+    const juce::Rectangle<float> clip = g.getClipBounds().toFloat();
 
-    const juce::AffineTransform view = spToPixels();
-    for (std::size_t i = 0; i < system->boxes.size(); ++i)
+    for (std::size_t p = 0; p < pages.size(); ++p)
     {
-        const LayoutBox& box = system->boxes[i];
-        g.setColour(hovered == i ? juce::Colour(0xff1565c0) : juce::Colours::black);
+        const PageLayout& page = pages[p];
+        const Point at = pageOrigin(p);
+        const juce::Rectangle<float> paper(static_cast<float>(at.x * zoom), static_cast<float>(at.y * zoom),
+                                           static_cast<float>(page.widthSp * zoom),
+                                           static_cast<float>(page.heightSp * zoom));
+        if (!paper.intersects(clip))
+            continue;
+        g.setColour(juce::Colours::black.withAlpha(0.25f));
+        g.fillRect(paper.translated(3, 3));
+        g.setColour(juce::Colours::white);
+        g.fillRect(paper);
+
+        for (std::size_t s = 0; s < page.systems.size(); ++s)
+        {
+            const std::optional<std::size_t> hoveredBox =
+                hovered && hovered->page == p && hovered->system == s ? std::optional(hovered->box) : std::nullopt;
+            paintSystem(g, page.systems[s], at, hoveredBox);
+        }
+    }
+}
+
+void ScoreView::paintSystem(juce::Graphics& g, const PlacedSystem& placed, Point pageAt,
+                            std::optional<std::size_t> hoveredBox)
+{
+    const juce::AffineTransform view =
+        juce::AffineTransform::translation(static_cast<float>(pageAt.x + placed.origin.x),
+                                           static_cast<float>(pageAt.y + placed.origin.y))
+            .scaled(zoom);
+    const std::vector<LayoutBox>& boxes = placed.system.boxes;
+    for (std::size_t i = 0; i < boxes.size(); ++i)
+    {
+        const LayoutBox& box = boxes[i];
+        g.setColour(hoveredBox == i ? juce::Colour(0xff1565c0) : juce::Colours::black);
 
         if (const auto* glyph = std::get_if<GlyphShape>(&box.shape))
         {
-            const juce::AffineTransform at = juce::AffineTransform::translation(static_cast<float>(glyph->origin.x),
-                                                                                static_cast<float>(glyph->origin.y))
-                                                 .followedBy(view);
+            const juce::AffineTransform at =
+                juce::AffineTransform::scale(static_cast<float>(glyph->scale))
+                    .translated(static_cast<float>(glyph->origin.x), static_cast<float>(glyph->origin.y))
+                    .followedBy(view);
             g.fillPath(font.outline(glyph->glyph), at);
         }
         else if (const auto* line = std::get_if<LineShape>(&box.shape))
@@ -137,7 +168,7 @@ void ScoreView::paint(juce::Graphics& g)
     if (showBounds)
     {
         g.setColour(juce::Colour(0x80e53935));
-        for (const LayoutBox& box : system->boxes)
+        for (const LayoutBox& box : boxes)
             if (box.part != Part::StaffLine)
                 g.drawRect(toJuce(box.bounds).transformedBy(view), 1.0f);
     }
@@ -145,38 +176,53 @@ void ScoreView::paint(juce::Graphics& g)
 
 void ScoreView::mouseMove(const juce::MouseEvent& event)
 {
-    if (!system)
-        return;
     // Back from pixels to sp, then the topmost box there (the last one painted).
-    juce::Point<float> sp = event.position;
-    spToPixels().inverted().transformPoint(sp.x, sp.y);
-    std::optional<std::size_t> found;
-    for (std::size_t i = system->boxes.size(); i-- > 0;)
+    const Point sp { event.position.x / zoom, event.position.y / zoom };
+    for (std::size_t p = 0; p < pages.size(); ++p)
     {
-        const Rect& r = system->boxes[i].bounds;
-        if (sp.x >= r.left && sp.x <= r.right && sp.y >= r.top && sp.y <= r.bottom)
+        const Point at = pageOrigin(p);
+        if (sp.y < at.y || sp.y > at.y + pages[p].heightSp)
+            continue;
+        const std::vector<PlacedSystem>& systems = pages[p].systems;
+        for (std::size_t s = systems.size(); s-- > 0;)
         {
-            found = i;
-            break;
+            const Point local { sp.x - at.x - systems[s].origin.x, sp.y - at.y - systems[s].origin.y };
+            const std::vector<LayoutBox>& boxes = systems[s].system.boxes;
+            for (std::size_t i = boxes.size(); i-- > 0;)
+            {
+                const Rect& r = boxes[i].bounds;
+                if (boxes[i].part != Part::StaffLine && local.x >= r.left && local.x <= r.right && local.y >= r.top
+                    && local.y <= r.bottom)
+                {
+                    setHovered(BoxRef { p, s, i });
+                    return;
+                }
+            }
         }
     }
-    setHovered(found);
+    setHovered(std::nullopt);
 }
 
 void ScoreView::mouseExit(const juce::MouseEvent&) { setHovered(std::nullopt); }
 
-void ScoreView::setHovered(std::optional<std::size_t> index)
+const LayoutBox& ScoreView::boxAt(const BoxRef& ref) const
 {
-    if (index == hovered)
+    return pages[ref.page].systems[ref.system].system.boxes[ref.box];
+}
+
+void ScoreView::setHovered(std::optional<BoxRef> box)
+{
+    if (box == hovered)
         return;
-    hovered = index;
+    hovered = box;
     repaint();
     if (onHover)
     {
-        if (hovered && system)
+        if (hovered)
         {
-            const LayoutBox& box = system->boxes[*hovered];
-            onHover(juce::String(box.nodeId) + juce::String::fromUTF8(" \xc2\xb7 ") + partName(box.part));
+            const LayoutBox& found = boxAt(*hovered);
+            onHover(juce::String(found.nodeId) + juce::String::fromUTF8(" \xc2\xb7 ") + partName(found.part) + " (page "
+                    + juce::String(hovered->page + 1) + ")");
         }
         else
         {
