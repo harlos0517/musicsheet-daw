@@ -21,6 +21,14 @@ FetchContent_Declare(leland
 FetchContent_MakeAvailable(leland)
 set(LELAND_DIR ${leland_SOURCE_DIR} CACHE INTERNAL "Leland font folder")
 
+# SMuFL itself, for metadata/glyphnames.json: every standard glyph name → codepoint.
+FetchContent_Declare(smufl
+    GIT_REPOSITORY https://github.com/w3c/smufl.git
+    GIT_TAG        v1.4
+    GIT_SHALLOW    ON)
+FetchContent_MakeAvailable(smufl)
+set(SMUFL_DIR ${smufl_SOURCE_DIR} CACHE INTERNAL "SMuFL repository folder")
+
 if(MSD_BUILD_TESTS)
     # BSL-1.0. Unit tests only, never shipped.
     FetchContent_Declare(Catch2

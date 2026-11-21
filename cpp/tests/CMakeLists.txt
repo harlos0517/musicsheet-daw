@@ -8,6 +8,7 @@ target_link_libraries(msd_tests PRIVATE msd_core msd_layout Catch2::Catch2WithMa
 target_compile_definitions(msd_tests PRIVATE
     MSD_RESOURCES_DIR="${PROJECT_SOURCE_DIR}/resources"
     MSD_LELAND_DIR="${LELAND_DIR}"
+    MSD_SMUFL_DIR="${SMUFL_DIR}"
     MSD_EXPORTED_SCORES_DIR="${PROJECT_SOURCE_DIR}/../prototype-web/midi-out")
 
 if(MSVC)

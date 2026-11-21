@@ -4,6 +4,8 @@ add_library(msd_layout STATIC
     Geometry.h
     SmuflFont.cpp
     SmuflFont.h
+    SmuflGlyphNames.cpp
+    SmuflGlyphNames.h
     StaffPosition.cpp
     StaffPosition.h
     SystemLayout.cpp

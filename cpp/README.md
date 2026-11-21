@@ -102,6 +102,26 @@ Glyph sizes, stem anchors and line thicknesses come from the font's SMuFL
 metadata (`SmuflFont`), so any SMuFL font with metadata can replace Leland.
 Leland v0.80 is fetched at configure time into `build/_deps/leland-src`.
 
+## Painting
+
+The app (`src/app`) only draws what layout decided. `MusicFont` turns SMuFL glyph
+names into outlines: the codepoint comes from SMuFL's `glyphnames.json`, and the
+outline is scaled to staff spaces by comparing `noteheadBlack`'s outline with its
+width in the font's metadata. `ScoreView` fills each glyph and line, scaled by the
+zoom. Leland, its metadata, `glyphnames.json` and the default layout are compiled
+into the app.
+
+Hovering a symbol shows its `nodeId` and part; **Boxes** draws every box's bounds.
+The system is as wide as the profile's page minus its margins, whatever the window.
+
+```powershell
+# score, staff ID and first measure are all optional
+& "cpp\build\debug\src\app\MusicsheetDawApp_artefacts\Debug\Musicsheet DAW.exe" prototype-web\midi-out\piano.music.json pno-lh 1
+```
+
+Scores load on the UI thread: the big ones (`smb_3m`, 77 MB) freeze the window for
+several seconds, longer in Debug.
+
 ## Licensing
 
 | Component | License | Notes |
@@ -111,9 +131,16 @@ Leland v0.80 is fetched at configure time into `build/_deps/leland-src`.
 | melatonin_inspector | MIT | Debug builds only |
 | nlohmann/json | MIT | |
 | Catch2 | BSL-1.0 | Tests only, not shipped |
-| Leland | SIL OFL 1.1 | Fetched at build time; ship `LICENSE.txt` with the font |
+| Leland | SIL OFL 1.1 | Compiled into the app; the build copies its license next to the exe as `Leland-OFL.txt` |
+| SMuFL `glyphnames.json` | W3C Community Final Specification Agreement | **Check**: compiled into the app, see below |
 
 GPLv3 §13 allows linking with AGPLv3 code, but the combined binary then carries
 AGPLv3's terms for the JUCE part (including §13's network-use clause). Options:
 keep GPLv3 for our code and accept that, relicense to AGPLv3 to keep it simple,
 or buy a JUCE commercial license.
+
+`glyphnames.json` comes with the SMuFL specification, which is published under the
+W3C Community Final Specification Agreement rather than a software license. It is a
+table of glyph names and codepoints, and MuseScore (GPLv3) ships the same file. If
+that's not acceptable, the alternative is a hand-written table of the codepoints
+the layout uses.

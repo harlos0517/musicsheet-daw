@@ -10,6 +10,7 @@
 
 #include "core/json/Load.h"
 #include "layout/SmuflFont.h"
+#include "layout/SmuflGlyphNames.h"
 #include "layout/StaffPosition.h"
 #include "layout/SystemLayout.h"
 
@@ -143,6 +144,25 @@ TEST_CASE("Leland's metadata loads", "[layout][font]")
     CHECK(stemUp.x == Approx(1.3));
     CHECK(stemUp.y == Approx(-0.16));
     CHECK_FALSE(font.bbox("notAGlyph").has_value());
+}
+
+TEST_CASE("SMuFL glyph names map to codepoints", "[layout][font]")
+{
+    const SmuflGlyphNames names = SmuflGlyphNames::load(std::filesystem::path(MSD_SMUFL_DIR) / "metadata" / "glyphnames.json");
+    CHECK(names.size() > 2000);
+    CHECK(names.codepoint("gClef") == U'');
+    CHECK(names.codepoint("noteheadBlack") == U'');
+    CHECK(names.codepoint("timeSig4") == U'');
+    CHECK_FALSE(names.codepoint("notAGlyph").has_value());
+
+    // Every glyph the layout below draws has a codepoint, and Leland has it.
+    for (const LayoutBox& box : layOut(0, 2).boxes)
+        if (const auto* glyph = std::get_if<GlyphShape>(&box.shape))
+        {
+            INFO(glyph->glyph);
+            CHECK(names.codepoint(glyph->glyph).has_value());
+            CHECK(leland().hasGlyph(glyph->glyph));
+        }
 }
 
 TEST_CASE("one system: what is drawn", "[layout]")
