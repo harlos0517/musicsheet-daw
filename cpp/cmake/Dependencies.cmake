@@ -12,6 +12,15 @@ FetchContent_Declare(nlohmann_json
     URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
 FetchContent_MakeAvailable(nlohmann_json)
 
+# SIL OFL 1.1. Leland.otf and leland_metadata.json (SMuFL). No CMake project: this
+# only downloads it; LELAND_DIR points at the files.
+FetchContent_Declare(leland
+    GIT_REPOSITORY https://github.com/MuseScoreFonts/Leland.git
+    GIT_TAG        v0.80
+    GIT_SHALLOW    ON)
+FetchContent_MakeAvailable(leland)
+set(LELAND_DIR ${leland_SOURCE_DIR} CACHE INTERNAL "Leland font folder")
+
 if(MSD_BUILD_TESTS)
     # BSL-1.0. Unit tests only, never shipped.
     FetchContent_Declare(Catch2

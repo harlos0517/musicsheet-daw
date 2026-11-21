@@ -61,6 +61,7 @@ cpp/
 │   ├── core/                       library msd_core: no JUCE, testable without a window
 │   │   ├── types/                  MusicData.h, LayoutProfile.h, LayoutSetup.h
 │   │   └── json/                   Load.h/.cpp (JSON → types), EnumNames.h
+│   ├── layout/                     library msd_layout: MusicData → boxes, no JUCE either
 │   └── app/                        the JUCE window
 └── tests/                          Catch2 unit tests (msd_tests)
 ```
@@ -87,6 +88,19 @@ cpp\build\debug\tests\msd_tests.exe "[exported]"
 ```
 
 In Debug this takes about 30 s for all 9 scores; in Release it takes about 2 s.
+The same tag also lays out the first system of every staff in those scores.
+
+## Layout (the engraving kind)
+
+`layoutSystem()` in `src/layout/SystemLayout.h` lays out one system of one staff.
+The caller picks the measures; later they come from `Layout.flow`, so editing
+never moves a system. The result is a list of `LayoutBox`es in staff spaces, each
+with the `nodeId` it came from, a `Part`, its bounds, and a SMuFL glyph or a line
+to draw.
+
+Glyph sizes, stem anchors and line thicknesses come from the font's SMuFL
+metadata (`SmuflFont`), so any SMuFL font with metadata can replace Leland.
+Leland v0.80 is fetched at configure time into `build/_deps/leland-src`.
 
 ## Licensing
 
@@ -97,7 +111,7 @@ In Debug this takes about 30 s for all 9 scores; in Release it takes about 2 s.
 | melatonin_inspector | MIT | Debug builds only |
 | nlohmann/json | MIT | |
 | Catch2 | BSL-1.0 | Tests only, not shipped |
-| Leland (planned) | SIL OFL 1.1 | Ship its license file with the font |
+| Leland | SIL OFL 1.1 | Fetched at build time; ship `LICENSE.txt` with the font |
 
 GPLv3 §13 allows linking with AGPLv3 code, but the combined binary then carries
 AGPLv3's terms for the JUCE part (including §13's network-use clause). Options:

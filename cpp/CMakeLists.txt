@@ -32,6 +32,7 @@ option(MSD_BUILD_TESTS "Build the unit tests" ON)
 include(cmake/Dependencies.cmake)
 
 add_subdirectory(src/core)
+add_subdirectory(src/layout)
 add_subdirectory(src/app)
 
 if(MSD_BUILD_TESTS)
