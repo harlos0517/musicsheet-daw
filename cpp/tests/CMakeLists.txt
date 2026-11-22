@@ -7,9 +7,10 @@ add_executable(msd_tests
     TimingTests.cpp
     CurveTests.cpp
     EventTests.cpp
-    MidiTests.cpp)
+    MidiTests.cpp
+    EditTests.cpp)
 
-target_link_libraries(msd_tests PRIVATE msd_core msd_layout msd_playback nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
+target_link_libraries(msd_tests PRIVATE msd_core msd_layout msd_playback msd_edit nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
 
 target_compile_definitions(msd_tests PRIVATE
     MSD_RESOURCES_DIR="${PROJECT_SOURCE_DIR}/resources"

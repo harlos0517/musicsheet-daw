@@ -96,6 +96,10 @@ cpp/
 │   │   ├── Curves.h, Interpretation.h   curve values and shapes; profiles' `extends`
 │   │   ├── RenderMidi.h            events → MIDI messages in ms, per output (renderTracks)
 │   │   └── MidiFile.h              messages → a Standard MIDI File (writeMidiFile)
+│   ├── edit/                       library msd_edit: changes to MusicData, with undo, no JUCE
+│   │   ├── PitchEdit.h             movePitches(): semitone, step in the key, octave
+│   │   ├── EditHistory.h           undo and redo
+│   │   └── NoteIndex.h, Selection.h
 │   └── app/                        the JUCE window: MainComponent, ScoreView, MusicFont
 └── tests/                          Catch2 unit tests (msd_tests)
 ```
