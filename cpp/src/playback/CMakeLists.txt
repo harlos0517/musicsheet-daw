@@ -1,10 +1,13 @@
 # msd_playback: MusicData + a PlaybackSetup → MusicEvents → MIDI, ported from
 # prototype-web/src/core/playback. No JUCE: it runs (and is tested) without a window.
 add_library(msd_playback STATIC
+    BuildCurves.cpp
+    BuildCurves.h
     Curves.cpp
     Curves.h
     Interpretation.cpp
     Interpretation.h
+    JsMath.h
     Repeats.cpp
     Repeats.h
     ScoreIndex.cpp
@@ -12,7 +15,8 @@ add_library(msd_playback STATIC
     Tempo.cpp
     Tempo.h
     Timeline.cpp
-    Timeline.h)
+    Timeline.h
+    TrackContext.h)
 
 target_include_directories(msd_playback PUBLIC ${PROJECT_SOURCE_DIR}/src)
 target_compile_features(msd_playback PUBLIC cxx_std_20)
