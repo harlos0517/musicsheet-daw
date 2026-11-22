@@ -161,8 +161,11 @@ private:
         if (const auto* slur = std::get_if<SlurMatch>(&match))
             return note.slur == slur->position;
         const auto& range = std::get<CurveRangeMatch>(match);
-        const double value = evaluateCurve(curves_, range.parameter, note.startTick, curveDefault(range.parameter),
-                                           CurveScope { note.staffId, note.voiceIndex });
+        auto lookup = lookups_.find(curveKey(range.parameter));
+        if (lookup == lookups_.end())
+            lookup = lookups_.try_emplace(curveKey(range.parameter), curves_, range.parameter).first;
+        const double value =
+            lookup->second(note.startTick, curveDefault(range.parameter), CurveScope { note.staffId, note.voiceIndex });
         return range.min <= value && value <= range.max;
     }
 
@@ -586,6 +589,7 @@ private:
 
     std::vector<const NoteEvent*> notes_;
     std::vector<CurveEvent> curves_;
+    mutable std::map<std::string, CurveLookup> lookups_; // by curveKey: evaluateCurve on curves_, faster
     std::vector<int> allChannels_;
     std::set<std::string> known_; // techniques some mapping matches
     std::vector<Sounding> soundings_;

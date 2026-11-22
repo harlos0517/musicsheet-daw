@@ -115,6 +115,58 @@ CurveSampler::CurveSampler(const std::vector<CurveEvent>& events, const CurvePar
                      [](const CurveEvent* a, const CurveEvent* b) { return a->startTick < b->startTick; });
 }
 
+CurveLookup::CurveLookup(const std::vector<CurveEvent>& events, const CurveParameter& parameter)
+{
+    for (const CurveEvent& event : events)
+        if (event.parameter == parameter)
+            events_.push_back(&event);
+}
+
+const CurveLookup::Layers& CurveLookup::layersFor(const std::optional<CurveScope>& scope)
+{
+    std::optional<Layers>* cached = nullptr;
+    Layers* layers = nullptr;
+    if (!scope)
+    {
+        cached = &unscoped_;
+        if (*cached)
+            return **cached;
+        layers = &cached->emplace();
+    }
+    else
+    {
+        const auto [found, added] = scoped_.try_emplace({ scope->staffId, scope->voiceIndex });
+        if (!added)
+            return found->second;
+        layers = &found->second;
+    }
+    for (const CurveEvent* event : events_)
+        if (covers(*event, scope))
+            layers->byLayer[layerOf(*event)].push_back(event);
+    for (std::vector<const CurveEvent*>& layer : layers->byLayer)
+        std::stable_sort(layer.begin(), layer.end(),
+                         [](const CurveEvent* a, const CurveEvent* b) { return a->startTick < b->startTick; });
+    return *layers;
+}
+
+double CurveLookup::operator()(double tick, double fallback, const std::optional<CurveScope>& scope, CurveLayer layer)
+{
+    // evaluateCurve keeps, of the segments starting at or before the tick, the one that
+    // starts last, and of those starting together the last in the list: here the last
+    // at or before the tick in each sorted layer.
+    const Layers& layers = layersFor(scope);
+    const CurveEvent* latest[3] {};
+    for (int l = 0; l < 3; ++l)
+    {
+        const std::vector<const CurveEvent*>& sorted = layers.byLayer[l];
+        const auto after = std::upper_bound(sorted.begin(), sorted.end(), tick,
+                                            [](double t, const CurveEvent* event) { return t < event->startTick; });
+        if (after != sorted.begin())
+            latest[l] = *std::prev(after);
+    }
+    return combine(latest, tick, fallback, layer);
+}
+
 double CurveSampler::operator()(double tick)
 {
     while (next_ < sorted_.size() && sorted_[next_]->startTick <= tick)

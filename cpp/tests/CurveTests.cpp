@@ -133,3 +133,38 @@ TEST_CASE("a child profile replaces, disables and adds to its parent", "[playbac
 
     CHECK_THROWS(resolveInterpretationProfile(setup.interpretationProfiles, "nope"));
 }
+
+TEST_CASE("a curve lookup finds the same value as evaluating the curve", "[playback][curves]")
+{
+    const auto segment = [](double start, double ticks, double from, double to, std::optional<CurveCombine> combine,
+                            std::optional<std::vector<CurveTarget>> appliesTo) {
+        return CurveEvent { .appliesTo = std::move(appliesTo),
+                            .combine = combine,
+                            .startTick = start,
+                            .durationTicks = ticks,
+                            .fromValue = from,
+                            .toValue = to };
+    };
+    const std::vector<CurveTarget> upper { { .staffId = "s1", .voiceIndex = std::nullopt } };
+    const std::vector<CurveTarget> lower { { .staffId = "s2", .voiceIndex = 1 } };
+    // Out of order, with segments starting together (the later one wins), in each layer.
+    const std::vector<CurveEvent> curves {
+        segment(500, 200, 0.2, 0.9, std::nullopt, std::nullopt),
+        segment(0, 0, 0.5, 0.5, std::nullopt, std::nullopt),
+        segment(500, 100, 0.3, 0.1, std::nullopt, upper),
+        segment(200, 0, 0.7, 0.7, std::nullopt, lower),
+        segment(200, 0, 0.6, 0.6, std::nullopt, lower),
+        segment(300, 50, 0.9, 1.1, CurveCombine::Scale, std::nullopt),
+        segment(300, 0, 0.05, 0.05, CurveCombine::Add, upper),
+    };
+    const CurveParameter dynamics = BuiltInCurveParameter::Dynamics;
+    CurveLookup lookup(curves, dynamics);
+    const std::vector<std::optional<CurveScope>> scopes { std::nullopt, CurveScope { "s1", 0 }, CurveScope { "s2", 1 },
+                                                          CurveScope { "s2", 0 } };
+    for (const auto& scope : scopes)
+        for (double tick = 900; tick >= -50; tick -= 12.5) // in any order
+            for (const CurveLayer layer : { CurveLayer::Total, CurveLayer::Base })
+                CHECK(lookup(tick, 0.4, scope, layer) == evaluateCurve(curves, dynamics, tick, 0.4, scope, layer));
+    CurveLookup sustain(curves, BuiltInCurveParameter::Sustain);
+    CHECK(sustain(600, 0.25) == 0.25);
+}

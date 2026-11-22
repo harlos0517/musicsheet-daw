@@ -3,6 +3,7 @@
 // Curve shapes and the value of a curve at a tick. Ported from
 // prototype-web/src/core/playback/curves.ts.
 
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -62,6 +63,30 @@ private:
     std::size_t next_ = 0;
     const CurveEvent* latest_[3] {}; // by layer: base, scale, add
     double fallback_;
+};
+
+// The same as evaluateCurve for one parameter, for many ticks in any order: for each
+// scope asked about, each layer's segments are sorted by start once, and the one in
+// force is found by a binary search instead of a scan. Points into `events`, which must
+// not change while it is used.
+class CurveLookup
+{
+public:
+    CurveLookup(const std::vector<CurveEvent>& events, const CurveParameter& parameter);
+
+    double operator()(double tick, double fallback, const std::optional<CurveScope>& scope = std::nullopt,
+                      CurveLayer layer = CurveLayer::Total);
+
+private:
+    struct Layers
+    {
+        std::vector<const CurveEvent*> byLayer[3]; // base, scale, add; by start, in event order on ties
+    };
+    const Layers& layersFor(const std::optional<CurveScope>& scope);
+
+    std::vector<const CurveEvent*> events_; // the parameter's, in their order
+    std::optional<Layers> unscoped_;
+    std::map<std::pair<NodeId, int>, Layers> scoped_;
 };
 
 } // namespace msd

@@ -247,6 +247,7 @@ public:
     NoteBuilder(const TrackContext& ctx, const std::vector<CurveEvent>& curves)
         : ctx_(ctx)
         , curves_(curves)
+        , dynamics_(curves, dynamicsCurve)
         , tpq_(ctx.music.tpq)
         , initialDynamics_(ctx.profile.initialDynamics.value_or(defaultInitialDynamics))
     {
@@ -750,7 +751,7 @@ private:
 
     double velocityAt(double tick, const CurveScope& scope) const
     {
-        return clamp01(evaluateCurve(curves_, dynamicsCurve, tick, initialDynamics_, scope));
+        return clamp01(dynamics_(tick, initialDynamics_, scope));
     }
 
     // Applies the rules and overrides to a note and adds it.
@@ -1122,6 +1123,7 @@ private:
 
     const TrackContext& ctx_;
     const std::vector<CurveEvent>& curves_;
+    mutable CurveLookup dynamics_; // evaluateCurve on curves_, without scanning them for every note
     const int tpq_;
     const double initialDynamics_;
     const std::vector<Placed>* chords_ = nullptr;
