@@ -256,6 +256,12 @@ The first Play runs `play()` on another thread, with a copy of the score: it tak
 is edited or another one is opened; a rack change only routes it again. Closing the
 app while it runs waits for it.
 
+While it plays, a blue line follows it on the page (as a share of the measure, not
+note by note), scrolling the page along. An edit during playback doesn't stop it:
+0.4 s after the last change `play()` runs again in the background, and then every
+sounding note is let go, the CCs and keyswitch in force there are sent, and playback
+goes on from where it is with the edited score.
+
 ## Licensing
 
 The project is licensed under the AGPLv3 or later (`/LICENSE`). JUCE is used

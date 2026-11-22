@@ -308,6 +308,31 @@ void AudioHost::setSequences(std::vector<PluginSequence> newSequences)
         attach(*entry);
 }
 
+void AudioHost::replaceSequences(std::vector<PluginSequence> newSequences, const std::vector<PluginSequence>& chase)
+{
+    if (!playing.load())
+    {
+        setSequences(std::move(newSequences));
+        return;
+    }
+    const juce::ScopedLock locked(lock);
+    sequences = std::move(newSequences);
+    endMs = 0;
+    for (const PluginSequence& sequence : sequences)
+        if (!sequence.messages.empty())
+            endMs = std::max(endMs, sequence.messages.back().timeMs);
+    endMs += 1000;
+    for (const auto& entry : hosted)
+    {
+        entry->releaseAll = true; // sent before the chase and the sequence
+        attach(*entry);           // from `from`, where the next block starts
+        entry->pending.clear();
+        for (const PluginSequence& messages : chase)
+            if (juce::String::fromUTF8(messages.pluginId.c_str()) == entry->id)
+                entry->pending.insert(entry->pending.end(), messages.messages.begin(), messages.messages.end());
+    }
+}
+
 void AudioHost::start(double fromMs, const std::vector<PluginSequence>& chase)
 {
     const juce::ScopedLock locked(lock);

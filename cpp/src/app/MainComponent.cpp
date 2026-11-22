@@ -429,7 +429,7 @@ void MainComponent::redo()
 
 void MainComponent::edited(const juce::String& what, const std::vector<NodeId>& measures)
 {
-    forgetPlayback();
+    scoreEdited();
     // The flow stays: systems and pages stay where they are. Only the systems with
     // changed measures are laid out again, unless the pages don't match the flow.
     const juce::Point<int> scrolled = viewport.getViewPosition();
@@ -652,12 +652,40 @@ void MainComponent::forgetPlayback()
 {
     if (audio.isPlaying())
         audio.stop();
+    replaySoon.stopTimer();
     ++playGeneration; // a preparation still running is for the old score: its result is dropped
     preparing = false;
     playback.reset();
     playedMusic.reset();
+    playbackStale = false;
     sequencesReady = false;
     showPlaying();
+}
+
+void MainComponent::scoreEdited()
+{
+    if (!audio.isPlaying())
+    {
+        forgetPlayback();
+        return;
+    }
+    // Playback goes on with what it has, and takes the edit in once play() has run on
+    // it: shortly after the last change, so that a run of key presses prepares once.
+    ++playGeneration;
+    preparing = false;
+    playbackStale = true;
+    replaySoon.startTimer(400);
+}
+
+void MainComponent::replayEdit()
+{
+    replaySoon.stopTimer();
+    if (!music || !playbackSetup)
+        return;
+    if (audio.isPlaying())
+        prepare(true);
+    else
+        forgetPlayback(); // stopped meanwhile: the next Play prepares it
 }
 
 void MainComponent::togglePlay()
@@ -675,17 +703,20 @@ void MainComponent::togglePlay()
         setStatus("No .setup.json next to the score: nothing says how to play it");
         return;
     }
-    if (playback)
-    {
+    if (playback && !playbackStale)
         startPlaying(0);
-        return;
-    }
+    else
+        prepare(false);
+}
 
-    // play() takes seconds on a big score (40 s for smb_3m in Debug), so it runs on
+void MainComponent::prepare(bool whilePlaying)
+{
+    // play() takes seconds on a big score (13 s for smb_3m in Debug), so it runs on
     // another thread, with copies of the score and setup: they may be edited meanwhile.
     preparing = true;
     showPlaying();
-    setStatus("Preparing playback...");
+    if (!whilePlaying)
+        setStatus("Preparing playback...");
     struct Prepared
     {
         std::shared_ptr<const MusicData> music;
@@ -698,7 +729,7 @@ void MainComponent::togglePlay()
     auto setupCopy = std::make_shared<const PlaybackSetup>(*playbackSetup);
     const int generation = playGeneration;
     juce::Component::SafePointer<MainComponent> safe(this);
-    preparer.addJob(std::function<void()>([prepared, setupCopy, generation, safe] {
+    preparer.addJob(std::function<void()>([prepared, setupCopy, generation, whilePlaying, safe] {
         const double started = juce::Time::getMillisecondCounterHiRes();
         try
         {
@@ -709,7 +740,7 @@ void MainComponent::togglePlay()
             prepared->error = e.what();
         }
         prepared->ms = millisecondsSince(started);
-        juce::MessageManager::callAsync([prepared, generation, safe] {
+        juce::MessageManager::callAsync([prepared, generation, whilePlaying, safe] {
             MainComponent* self = safe.getComponent();
             if (self == nullptr || generation != self->playGeneration)
                 return; // closed, or the score changed since
@@ -722,10 +753,28 @@ void MainComponent::togglePlay()
             }
             self->playedMusic = prepared->music;
             self->playback = std::move(prepared->playback);
+            self->playbackStale = false;
             self->sequencesReady = false;
-            self->startPlaying(prepared->ms);
+            if (!whilePlaying)
+                self->startPlaying(prepared->ms);
+            else if (self->audio.isPlaying())
+                self->playEditedScore(prepared->ms);
+            self->showPlaying();
         });
     }));
+}
+
+void MainComponent::playEditedScore(double preparedMs)
+{
+    std::vector<std::string> routing;
+    sequences = buildSequences(*playedMusic, *playback, *playbackSetup, rack, routing);
+    sequencesReady = true;
+    const double at = audio.positionMs();
+    std::vector<PluginSequence> chase;
+    for (const PluginSequence& sequence : sequences)
+        chase.push_back({ sequence.pluginId, chaseMessages(sequence, at) });
+    audio.replaceSequences(sequences, chase);
+    setStatus("Playing the edited score (prepared in " + juce::String(juce::roundToInt(preparedMs)) + " ms)");
 }
 
 void MainComponent::startPlaying(double preparedMs)
@@ -769,7 +818,7 @@ void MainComponent::startPlaying(double preparedMs)
         chase.push_back({ sequence.pluginId, chaseMessages(sequence, from) });
     audio.start(from, chase);
     showPlaying();
-    playingTimer.startTimer(100);
+    playingTimer.startTimer(30);
 
     juce::String text = "Playing from " + where;
     if (preparedMs > 0)
@@ -782,9 +831,34 @@ void MainComponent::startPlaying(double preparedMs)
 void MainComponent::showPlaying()
 {
     const bool playing = audio.isPlaying();
-    playButton.setButtonText(preparing ? "Preparing..." : playing ? "Stop" : "Play");
+    playButton.setButtonText(playing ? "Stop" : preparing ? "Preparing..." : "Play");
     if (!playing)
         playingTimer.stopTimer();
+
+    // The cursor: where playback is, as a share of its measure (repeats are played
+    // measures too), kept in view.
+    if (!playing || !playback || playback->played.empty())
+    {
+        scoreView.setCursor(std::nullopt);
+        return;
+    }
+    const double tick = playback->tempo.msToTick(std::max(0.0, audio.positionMs()));
+    const std::vector<PlayedMeasure>& played = playback->played;
+    auto measure = std::upper_bound(played.begin(), played.end(), tick,
+                                    [](double t, const PlayedMeasure& m) { return t < m.startTick; });
+    if (measure != played.begin())
+        --measure;
+    const MeasureInfo& info = playback->timeline[static_cast<std::size_t>(measure->measureIndex)];
+    const double fraction =
+        info.lengthTicks > 0 ? std::clamp((tick - measure->startTick) / info.lengthTicks, 0.0, 1.0) : 0.0;
+    scoreView.setCursor(ScoreView::PlayCursor { info.measure->id, fraction });
+    const juce::Rectangle<int> line = scoreView.cursorBounds();
+    const juce::Rectangle<int> view = viewport.getViewArea();
+    if (!line.isEmpty() && !view.contains(line))
+    {
+        const int x = line.getX() >= view.getX() && line.getRight() <= view.getRight() ? view.getX() : line.getX() - 40;
+        viewport.setViewPosition(std::max(0, x), std::max(0, line.getY() - 40));
+    }
 }
 
 } // namespace msd

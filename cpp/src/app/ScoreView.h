@@ -41,6 +41,16 @@ public:
     // The notes drawn as selected: their noteheads and accidentals.
     void setSelected(std::unordered_set<NodeId> notes);
 
+    // Where playback is: a line across the system, `fraction` of the way through the
+    // measure (from its start barline, or the system's start, to its end barline).
+    struct PlayCursor
+    {
+        NodeId measureId;
+        double fraction = 0;
+    };
+    void setCursor(std::optional<PlayCursor> cursor);
+    juce::Rectangle<int> cursorBounds() const; // in pixels; empty when there is none
+
     void paint(juce::Graphics&) override;
     void mouseMove(const juce::MouseEvent&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -72,6 +82,7 @@ private:
     bool showBounds = false;
     std::optional<BoxRef> hovered;
     std::unordered_set<NodeId> selected;
+    std::optional<Rect> cursor; // in sp, in this component
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScoreView)
 };

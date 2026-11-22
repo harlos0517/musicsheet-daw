@@ -56,6 +56,11 @@ public:
     // the plugins were played on.
     void stop();
 
+    // New sequences while playing (the score was edited): every sounding note is let go,
+    // each plugin gets the messages `chase` has for it, then plays on from where it is.
+    // When not playing, the same as setSequences.
+    void replaceSequences(std::vector<PluginSequence> sequences, const std::vector<PluginSequence>& chase);
+
     bool isPlaying() const { return playing.load(); }
     double positionMs() const { return position.load(); } // where playback is, in sequence time
 

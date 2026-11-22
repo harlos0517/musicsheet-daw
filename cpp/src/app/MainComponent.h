@@ -56,9 +56,13 @@ private:
     void showAudioSettings();
     void showRack();
     void togglePlay();
-    void startPlaying(double preparedMs); // once `playback` is there
-    void showPlaying(); // the Play button, while playing and once it stops
-    void forgetPlayback(); // after an edit, or another score: play() runs again
+    void prepare(bool whilePlaying);          // runs play() on `preparer`
+    void startPlaying(double preparedMs);     // once `playback` is there
+    void playEditedScore(double preparedMs);  // swaps the new playback in, playing on
+    void showPlaying();                       // the Play button and the cursor
+    void forgetPlayback();                    // another score: play() runs again
+    void scoreEdited();                       // play() runs again, at once when playing
+    void replayEdit();
     void loadRack();               // rack.json and each plugin's state, at the start
     void saveRack(bool withStates); // rack.json; with the plugins' states too
     void openPluginWindow(const juce::String& pluginId);
@@ -80,6 +84,7 @@ private:
     std::vector<PluginSequence> sequences;      // what the audio host plays, from playback
     bool sequencesReady = false;                // false after an edit or a rack change
     bool preparing = false;                     // play() is running on `preparer`
+    bool playbackStale = false;                 // `playback` is from before an edit
     int playGeneration = 0;                     // changes when a running play() is for an old score
     juce::ThreadPool preparer { 1 };
     juce::File scoreFile;
@@ -114,6 +119,7 @@ private:
     RackComponent* rackComponent = nullptr; // inside rackWindow
     juce::TimedCallback saveRackSoon { [this] { saveRack(false); } };
     juce::TimedCallback playingTimer { [this] { showPlaying(); } };
+    juce::TimedCallback replaySoon { [this] { replayEdit(); } };
 
 #if MSD_ENABLE_INSPECTOR
     std::unique_ptr<melatonin::Inspector> inspector;

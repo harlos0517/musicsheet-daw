@@ -1,5 +1,6 @@
 #include "ScoreView.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -123,6 +124,12 @@ void ScoreView::paint(juce::Graphics& g)
             paintSystem(g, page.systems[s], at, hoveredBox);
         }
     }
+
+    if (cursor)
+    {
+        g.setColour(juce::Colour(0xc01565c0));
+        g.fillRect(toJuce(*cursor).transformedBy(juce::AffineTransform::scale(zoom)));
+    }
 }
 
 void ScoreView::paintSystem(juce::Graphics& g, const PlacedSystem& placed, Point pageAt,
@@ -219,6 +226,42 @@ void ScoreView::mouseDown(const juce::MouseEvent& event)
     const std::optional<BoxRef> box = boxUnder(event.position);
     const bool note = box && (boxAt(*box).part == Part::Notehead || boxAt(*box).part == Part::Accidental);
     onNoteClick(note ? boxAt(*box).nodeId : NodeId {}, event.mods.isShiftDown());
+}
+
+void ScoreView::setCursor(std::optional<PlayCursor> playing)
+{
+    std::optional<Rect> found;
+    if (playing)
+        for (std::size_t p = 0; p < pages.size() && !found; ++p)
+            for (const PlacedSystem& placed : pages[p].systems)
+            {
+                const SystemLayout& system = placed.system;
+                const auto slot = std::find_if(system.measures.begin(), system.measures.end(),
+                                               [&](const MeasureSlot& s) { return s.measureId == playing->measureId; });
+                if (slot == system.measures.end() || system.staves.empty())
+                    continue;
+                const Point at = pageOrigin(p);
+                const double x = at.x + placed.origin.x + slot->left + (slot->right - slot->left) * playing->fraction;
+                const StaffSlot& last = system.staves.back();
+                const double top = at.y + placed.origin.y + system.staves.front().y - 2;
+                const double bottom = at.y + placed.origin.y + last.y + std::max(0, last.lines - 1) + 2;
+                found = Rect { x - 0.15, top, x + 0.15, bottom };
+                break;
+            }
+    if (found.has_value() == cursor.has_value()
+        && (!found || (found->left == cursor->left && found->top == cursor->top)))
+        return;
+    const juce::Rectangle<int> before = cursorBounds();
+    cursor = found;
+    repaint(before.expanded(2));
+    repaint(cursorBounds().expanded(2));
+}
+
+juce::Rectangle<int> ScoreView::cursorBounds() const
+{
+    if (!cursor)
+        return {};
+    return toJuce(*cursor).transformedBy(juce::AffineTransform::scale(zoom)).getSmallestIntegerContainer();
 }
 
 void ScoreView::setSelected(std::unordered_set<NodeId> notes)
