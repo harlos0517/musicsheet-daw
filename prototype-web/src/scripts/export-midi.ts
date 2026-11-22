@@ -1,9 +1,10 @@
 /**
  * Writes each example score as a MIDI file, plus its MusicData (`.music.json`, read by
- * the C++ app), the PlaybackSetup it was played with (`.setup.json`) and the
- * MusicEvents and MIDI messages behind it as JSON, into `midi-out/`. MusicXML files in
- * `scores/` are imported, checked and written too, each with its setup and a report of
- * what the import left out. Run with `pnpm midi`.
+ * the C++ app), the PlaybackSetup it was played with (`.setup.json`), the played order
+ * of the measures and the tempo map (`.timing.json`), and the MusicEvents and MIDI
+ * messages behind it as JSON, into `midi-out/`. MusicXML files in `scores/` are
+ * imported, checked and written too, each with its setup, timing and a report of what
+ * the import left out. Run with `pnpm midi`.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
@@ -16,6 +17,7 @@ import { melody } from '@/core/examples/melody'
 import { piano } from '@/core/examples/piano'
 import { setups } from '@/core/examples/profiles'
 import { strings } from '@/core/examples/strings'
+import type { Playback } from '@/core/playback'
 import { play } from '@/core/playback'
 import type MusicData from '@/core/types/MusicData'
 import type { PlaybackSetup } from '@/core/types/PlaybackSetup'
@@ -28,6 +30,15 @@ const writeMusic = (name: string, music: MusicData) =>
   writeFileSync(resolve(out, `${name}.music.json`), JSON.stringify(music, null, 2))
 const writeSetup = (name: string, setup: PlaybackSetup) =>
   writeFileSync(resolve(out, `${name}.setup.json`), JSON.stringify(setup, null, 2))
+/** The order measures are played in, and the tempo map: the first steps of playback. */
+const writeTiming = (name: string, result: Playback) => {
+  const timing = {
+    played: result.played.map(({ info, pass, startTick }) =>
+      ({ measureIndex: info.index, measureId: info.measure.id, pass, startTick })),
+    tempo: result.tempo.points,
+  }
+  writeFileSync(resolve(out, `${name}.timing.json`), JSON.stringify(timing, null, 2))
+}
 
 for (const [name, build] of Object.entries(scores)) {
   const music = build()
@@ -35,6 +46,7 @@ for (const [name, build] of Object.entries(scores)) {
   const setup = setups[name as keyof typeof scores]
   writeSetup(name, setup)
   const result = play(music, setup)
+  writeTiming(name, result)
   writeFileSync(resolve(out, `${name}.mid`), result.file)
   writeFileSync(resolve(out, `${name}.events.json`), JSON.stringify(result.events, null, 2))
   writeFileSync(resolve(out, `${name}.midi.json`), JSON.stringify(result.tracks, null, 2))
@@ -60,6 +72,7 @@ for (const file of files) {
   const setup = cinematicSetup(music, kitNotes)
   writeSetup(name, setup)
   const result = play(music, setup)
+  writeTiming(name, result)
   writeFileSync(resolve(out, `${name}.mid`), result.file)
 
   const count = (items: string[]) => {
