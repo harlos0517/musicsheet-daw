@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <optional>
@@ -470,19 +471,34 @@ private:
             if (curve.parameter == mapping.parameter)
                 own.push_back(curve);
         // Tick → whether it must be sent (a segment edge) rather than being a ramp sample.
-        std::map<double, bool> ticks { { 0.0, true } };
+        // TS keeps these in a Map: ramp samples never replace a tick already there, edges
+        // always mark theirs. So a tick is an edge if anything made it one; of equal ticks
+        // the first one stays. Collected in a vector and merged, for speed (a ramp gives a
+        // sample every millisecond).
+        std::vector<std::pair<double, bool>> ticks { { 0.0, true } };
+        TempoMap::Cursor cursor(tempo_);
         for (const CurveEvent& curve : own)
         {
             const double end = curve.startTick + curve.durationTicks;
             if (curve.durationTicks > 0 && curve.curveType != CurveType::Hold)
             {
-                const double endMs = tempo_.tickToMs(end);
-                for (double ms = tempo_.tickToMs(curve.startTick) + curveSampleMs; ms < endMs; ms += curveSampleMs)
-                    ticks.try_emplace(tempo_.msToTick(ms), false);
+                const double endMs = cursor.tickToMs(end);
+                for (double ms = cursor.tickToMs(curve.startTick) + curveSampleMs; ms < endMs; ms += curveSampleMs)
+                    ticks.emplace_back(cursor.msToTick(ms), false);
             }
-            ticks.insert_or_assign(curve.startTick, true);
-            ticks.insert_or_assign(end, true);
+            ticks.emplace_back(curve.startTick, true);
+            ticks.emplace_back(end, true);
         }
+        std::stable_sort(ticks.begin(), ticks.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        std::size_t kept = 0;
+        for (std::size_t i = 0; i < ticks.size(); ++i)
+        {
+            if (kept > 0 && !(ticks[kept - 1].first < ticks[i].first))
+                ticks[kept - 1].second = ticks[kept - 1].second || ticks[i].second;
+            else
+                ticks[kept++] = ticks[i];
+        }
+        ticks.resize(kept);
         const std::vector<int>& channels = mapping.channels ? *mapping.channels : allChannels_;
 
         struct Point
@@ -492,6 +508,11 @@ private:
             bool resume; // where a hold ends, to pick the curve up again
             bool edge;
         };
+        // Already in time order: tickToMs never goes back.
+        std::vector<Point> curvePoints;
+        curvePoints.reserve(ticks.size());
+        for (const auto& [tick, edge] : ticks)
+            curvePoints.push_back({ std::max(0.0, cursor.tickToMs(tick)), tick, false, edge });
         for (const int channel : channels)
         {
             for (const CurveCc& cc : mapping.cc.value_or(std::vector<CurveCc> {}))
@@ -502,13 +523,18 @@ private:
                         taken.push_back(hold);
                 std::stable_sort(taken.begin(), taken.end(),
                                  [](const Hold& a, const Hold& b) { return a.startMs < b.startMs; });
-                std::vector<Point> points;
-                for (const auto& [tick, edge] : ticks)
-                    points.push_back({ std::max(0.0, tempo_.tickToMs(tick)), tick, false, edge });
+                std::vector<Point> holdPoints;
                 for (const Hold& hold : taken)
-                    points.push_back({ hold.endMs, tempo_.msToTick(hold.endMs), true, true });
-                std::stable_sort(points.begin(), points.end(),
+                    holdPoints.push_back({ hold.endMs, tempo_.msToTick(hold.endMs), true, true });
+                std::stable_sort(holdPoints.begin(), holdPoints.end(),
                                  [](const Point& a, const Point& b) { return a.timeMs < b.timeMs; });
+                // As a stable sort of the curve's points followed by the holds' would: on
+                // equal times, the curve's first.
+                std::vector<Point> points;
+                points.reserve(curvePoints.size() + holdPoints.size());
+                std::merge(curvePoints.begin(), curvePoints.end(), holdPoints.begin(), holdPoints.end(),
+                           std::back_inserter(points),
+                           [](const Point& a, const Point& b) { return a.timeMs < b.timeMs; });
 
                 std::optional<int> last;
                 double lastMs = -infinity;
