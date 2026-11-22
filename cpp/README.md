@@ -141,6 +141,10 @@ Two steps, so that pages don't move while the music is edited
   reflow joins the system before it (squeezed, or overfull), a system whose start
   measure is gone joins the one before, and a staff the flow doesn't know goes
   below the others.
+- `relayoutMeasures()` lays out again only the systems holding some measures, in
+  pages from the same flow, when the score still has the same measures, as after
+  a pitch change. On `smb_3m` that takes about 70 ms in Debug, where all of
+  `layoutPages()` takes 5 s.
 
 `layoutSystem()` (`src/layout/SystemLayout.h`) lays out one system: every staff
 spaced together, so notes sounding at the same time line up. The result is a list

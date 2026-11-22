@@ -548,6 +548,43 @@ TEST_CASE("large scores get 1 mm staves on A3, closer together", "[pages]")
     CHECK(systemFitsPage(twenty, fullScore(), large));
 }
 
+// The systems' boxes, as text, to compare two layouts exactly.
+static std::vector<std::string> describeBoxes(const std::vector<PageLayout>& pages)
+{
+    std::vector<std::string> lines;
+    for (const PageLayout& page : pages)
+        for (const PlacedSystem& placed : page.systems)
+            for (const LayoutBox& box : placed.system.boxes)
+                lines.push_back(box.nodeId + " " + std::to_string(static_cast<int>(box.part)) + " "
+                                + std::to_string(placed.origin.x + box.bounds.left) + " "
+                                + std::to_string(placed.origin.y + box.bounds.top) + " "
+                                + std::to_string(box.bounds.right - box.bounds.left));
+    return lines;
+}
+
+TEST_CASE("laying out the changed measures again gives the pages a full layout gives", "[pages]")
+{
+    MusicData music = oneStaff(30);
+    const ScoreInput input { .music = music, .profile = defaultProfile(), .font = leland(), .layout = fullScore() };
+    const Flow flow = reflow(input);
+    std::vector<PageLayout> pages = layoutPages(input, flow);
+
+    // B4 → F#5 in measure 12: an accidental, a stem the other way.
+    Chord& chord = std::get<Chord>(music.tracks[0].staves[0].measures[11].voices[0].events[0]);
+    std::get<Note>(chord.notes[0]).pitch = Pitch { Step::F, 1, 5 };
+    const std::vector<std::string> before = describeBoxes(pages);
+    REQUIRE(relayoutMeasures(input, flow, { "m12" }, pages));
+    const std::vector<std::string> after = describeBoxes(pages);
+    CHECK(after != before);
+    CHECK(after == describeBoxes(layoutPages(input, flow)));
+
+    // Pages made from another flow are left alone.
+    Flow other = flow;
+    other.pages.push_back(other.pages.back());
+    CHECK_FALSE(relayoutMeasures(input, other, { "m12" }, pages));
+    CHECK(describeBoxes(pages) == after);
+}
+
 // Reflows every exported score and lays out all its pages, with the profile the app
 // picks: the default, or the large-score one when a system doesn't fit the default's
 // page. Either way, a system fits its page.

@@ -81,4 +81,11 @@ Flow reflow(const ScoreInput& input);
 // a staff the flow doesn't place goes below the system's last staff.
 std::vector<PageLayout> layoutPages(const ScoreInput& input, const Flow& flow);
 
+// Lays out again only the systems that hold `measureIds`, in `pages` that layoutPages
+// made from the same flow, when the score still has the same measures: after a pitch
+// change, say. Much faster on a big score. Returns false, leaving `pages` as they were,
+// when they don't match the flow; lay them all out again then.
+bool relayoutMeasures(const ScoreInput& input, const Flow& flow, const std::vector<NodeId>& measureIds,
+                      std::vector<PageLayout>& pages);
+
 } // namespace msd
