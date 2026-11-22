@@ -95,6 +95,7 @@ void AudioHost::loadPlugin(const juce::String& id, const juce::String& file, con
             {
                 const juce::ScopedLock locked(lock);
                 prepare(*entry);
+                attach(*entry);
                 const auto found =
                     std::find_if(hosted.begin(), hosted.end(), [&](const auto& h) { return h->id == id; });
                 if (found != hosted.end())
@@ -183,6 +184,8 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const*, int, float
     const juce::ScopedTryLock locked(lock);
     if (!locked.isLocked())
         return;
+    const bool isPlaying = playing.load();
+    const double to = from + numSamples * 1000.0 / sampleRate;
     for (const auto& entry : hosted)
     {
         juce::AudioBuffer<float>& buffer = entry->buffer;
@@ -193,12 +196,139 @@ void AudioHost::audioDeviceIOCallbackWithContext(const float* const*, int, float
         view.clear();
         entry->block.clear();
         entry->midi.removeNextBlockOfMessages(entry->block, numSamples);
+
+        if (entry->releaseAll)
+        {
+            for (std::size_t i = 0; i < entry->held.size(); ++i)
+                if (entry->held[i])
+                    add(*entry,
+                        { 0, MidiMessageType::NoteOff, static_cast<int>(i / 128) + 1, static_cast<int>(i % 128), 0,
+                          MidiSource::Note },
+                        0);
+            for (int c = 0; c < 16; ++c)
+                if (entry->channels[static_cast<std::size_t>(c)])
+                    add(*entry, { 0, MidiMessageType::Cc, c + 1, 123, 0, MidiSource::Note }, 0); // All Notes Off
+            entry->held.reset();
+            entry->channels.reset();
+            entry->releaseAll = false;
+        }
+        for (const MidiMessage& message : entry->pending)
+            add(*entry, message, 0);
+        entry->pending.clear();
+        if (isPlaying && entry->sequence != nullptr)
+        {
+            const std::vector<MidiMessage>& messages = entry->sequence->messages;
+            for (; entry->next < messages.size() && messages[entry->next].timeMs < to; ++entry->next)
+            {
+                const MidiMessage& message = messages[entry->next];
+                const double offset = (message.timeMs - from) * sampleRate / 1000.0;
+                add(*entry, message, std::clamp(static_cast<int>(offset), 0, numSamples - 1));
+            }
+        }
+
         entry->instance->processBlock(view, entry->block);
         // The plugin's first outputs: its main stereo pair.
         for (int c = 0; c < std::min(numOutputs, view.getNumChannels()); ++c)
             if (outputs[c] != nullptr)
                 juce::FloatVectorOperations::add(outputs[c], view.getReadPointer(c), numSamples);
     }
+
+    if (isPlaying)
+    {
+        from = to;
+        position.store(to);
+        if (to >= endMs)
+        {
+            playing.store(false);
+            for (const auto& entry : hosted)
+                entry->releaseAll = true;
+        }
+    }
+}
+
+void AudioHost::add(Hosted& entry, const MidiMessage& message, int sample)
+{
+    const int channel = std::clamp(message.channel, 1, 16) - 1;
+    const auto key = static_cast<std::size_t>(channel * 128 + (message.data1 & 0x7f));
+    juce::uint8 status = 0xb0;
+    switch (message.type)
+    {
+    case MidiMessageType::NoteOn:
+        status = 0x90;
+        entry.held[key] = message.data2 > 0;
+        break;
+    case MidiMessageType::NoteOff:
+        status = 0x80;
+        entry.held[key] = false;
+        break;
+    case MidiMessageType::Cc: break;
+    }
+    entry.channels[static_cast<std::size_t>(channel)] = true;
+    const juce::uint8 bytes[] = { static_cast<juce::uint8>(status | channel),
+                                  static_cast<juce::uint8>(message.data1 & 0x7f),
+                                  static_cast<juce::uint8>(message.data2 & 0x7f) };
+    entry.block.addEvent(bytes, 3, sample);
+}
+
+void AudioHost::attach(Hosted& entry)
+{
+    const auto found = std::find_if(sequences.begin(), sequences.end(), [&](const PluginSequence& s) {
+        return juce::String::fromUTF8(s.pluginId.c_str()) == entry.id;
+    });
+    entry.sequence = found == sequences.end() ? nullptr : &*found;
+    entry.next = 0;
+    if (entry.sequence != nullptr)
+    {
+        const std::vector<MidiMessage>& messages = entry.sequence->messages;
+        entry.next =
+            static_cast<std::size_t>(std::lower_bound(messages.begin(), messages.end(), from,
+                                                      [](const MidiMessage& m, double ms) { return m.timeMs < ms; })
+                                     - messages.begin());
+    }
+}
+
+void AudioHost::stopLocked()
+{
+    playing.store(false);
+    for (const auto& entry : hosted)
+        entry->releaseAll = true;
+}
+
+void AudioHost::setSequences(std::vector<PluginSequence> newSequences)
+{
+    const juce::ScopedLock locked(lock);
+    stopLocked();
+    sequences = std::move(newSequences);
+    endMs = 0;
+    for (const PluginSequence& sequence : sequences)
+        if (!sequence.messages.empty())
+            endMs = std::max(endMs, sequence.messages.back().timeMs);
+    endMs += 1000;
+    for (const auto& entry : hosted)
+        attach(*entry);
+}
+
+void AudioHost::start(double fromMs, const std::vector<PluginSequence>& chase)
+{
+    const juce::ScopedLock locked(lock);
+    if (playing.load())
+        stopLocked();
+    from = fromMs;
+    position.store(fromMs);
+    for (const auto& entry : hosted)
+    {
+        attach(*entry);
+        for (const PluginSequence& messages : chase)
+            if (juce::String::fromUTF8(messages.pluginId.c_str()) == entry->id)
+                entry->pending.insert(entry->pending.end(), messages.messages.begin(), messages.messages.end());
+    }
+    playing.store(true);
+}
+
+void AudioHost::stop()
+{
+    const juce::ScopedLock locked(lock);
+    stopLocked();
 }
 
 } // namespace msd

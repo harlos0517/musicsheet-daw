@@ -96,6 +96,7 @@ cpp/
 │   │   ├── Curves.h, Interpretation.h   curve values and shapes; profiles' `extends`
 │   │   ├── RenderMidi.h            events → MIDI messages in ms, per output (renderTracks)
 │   │   ├── Rack.h                  which plugin slot each output plays on; adding slots
+│   │   ├── Sequence.h              what each plugin plays; CCs and keyswitches to chase
 │   │   └── MidiFile.h              messages → a Standard MIDI File (writeMidiFile)
 │   ├── edit/                       library msd_edit: changes to MusicData, with undo, no JUCE
 │   │   ├── PitchEdit.h             movePitches(): semitone, step in the key, octave
@@ -238,7 +239,22 @@ DirectSound). The choice is saved in `%APPDATA%\Musicsheet DAW\Musicsheet DAW.se
 The rack is saved to `%APPDATA%\Musicsheet DAW\rack.json` a second after each change;
 each plugin's state (for Kontakt, its patches) to `rack\<id>.state` beside it when
 the app closes or on **Save now**. At the start every plugin is loaded again with its
-state. Playing the score through the rack comes next.
+state.
+
+## Playing
+
+**Play** (or Space) plays the score through the rack, from the measure of the first
+selected note, or from the start. Each output's messages go to its slot's plugin, on
+the slot's channel, moved by its profile's `trackDelayMs` (−66 ms for Cinematic
+Studio), and are placed to the sample. Playing from a measure first sends, per
+channel, the last value of each CC and the last keyswitch before it, and starts as
+far before it as the most negative track delay. **Stop** lets go of every sounding
+note and sends All Notes Off on each channel used.
+
+The first Play runs `play()` on another thread, with a copy of the score: it takes
+6 s for paroniie and 40 s for `smb_3m` in Debug. Its result is kept until the score
+is edited or another one is opened; a rack change only routes it again. Closing the
+app while it runs waits for it.
 
 ## Licensing
 

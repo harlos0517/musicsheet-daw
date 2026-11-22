@@ -8,8 +8,10 @@
 #include "BinaryData.h"
 #include "core/json/Load.h"
 #include "core/json/Save.h"
+#include "edit/NoteIndex.h"
 #include "layout/PageLayout.h"
 #include "playback/Play.h"
+#include "playback/Sequence.h"
 
 namespace msd
 {
@@ -76,6 +78,8 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     audioButton.onClick = [this] { showAudioSettings(); };
     rackButton.setTooltip("The plugins scores play on, shared by every score");
     rackButton.onClick = [this] { showRack(); };
+    playButton.setTooltip("Play the score through the rack, from the selected note's measure (Space)");
+    playButton.onClick = [this] { togglePlay(); };
     zoomSlider.setRange(2, 30, 0.5);
     zoomSlider.setValue(6, juce::dontSendNotification);
     zoomSlider.onValueChange = [this] { scoreView.setZoom(static_cast<float>(zoomSlider.getValue())); };
@@ -92,8 +96,12 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
 
     for (juce::Component* c : std::initializer_list<juce::Component*> {
              &openButton, &fileLabel, &reflowButton, &exportButton, &zoomLabel, &zoomSlider, &boundsToggle,
-             &audioButton, &rackButton, &statusLabel, &viewport })
+             &audioButton, &rackButton, &playButton, &statusLabel, &viewport })
         addAndMakeVisible(c);
+    // Space plays and stops: no button may take it as a click.
+    for (juce::Button* b : std::initializer_list<juce::Button*> {
+             &openButton, &reflowButton, &exportButton, &boundsToggle, &audioButton, &rackButton, &playButton })
+        b->setWantsKeyboardFocus(false);
 
     setSize(1000, 800);
     loadRack();
@@ -154,6 +162,7 @@ void MainComponent::resized()
     audioBar.items = {
         item(audioButton, 80),
         item(rackButton, 80),
+        item(playButton, 80),
     };
     audioBar.performLayout(area.removeFromTop(34));
 
@@ -163,6 +172,11 @@ void MainComponent::resized()
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
+    if (key == juce::KeyPress::spaceKey)
+    {
+        togglePlay();
+        return true;
+    }
     // The MuseScore keys: Up/Down a semitone, Alt+Shift+Up/Down a step in the key,
     // Ctrl+Up/Down an octave.
     const int code = key.getKeyCode();
@@ -261,6 +275,7 @@ void MainComponent::openScore(const juce::File& file)
     if (rackComponent != nullptr)
         rackComponent->setScore(&*music, playbackSetup ? &*playbackSetup : nullptr);
     history.clear();
+    forgetPlayback();
     selection.notes.clear();
     scoreView.setSelected({});
 
@@ -414,6 +429,7 @@ void MainComponent::redo()
 
 void MainComponent::edited(const juce::String& what, const std::vector<NodeId>& measures)
 {
+    forgetPlayback();
     // The flow stays: systems and pages stay where they are. Only the systems with
     // changed measures are laid out again, unless the pages don't match the flow.
     const juce::Point<int> scrolled = viewport.getViewPosition();
@@ -470,14 +486,14 @@ void MainComponent::exportMidi(const juce::File& file)
     }
     try
     {
-        const Playback playback = play(*music, loadPlaybackSetup(setupFile.getFullPathName().toStdString()));
-        if (!file.replaceWithData(playback.file.data(), playback.file.size()))
+        const Playback exported = play(*music, loadPlaybackSetup(setupFile.getFullPathName().toStdString()));
+        if (!file.replaceWithData(exported.file.data(), exported.file.size()))
         {
             setStatus("Could not write " + file.getFullPathName());
             return;
         }
-        setStatus("Wrote " + file.getFileName() + ": " + juce::String(playback.tracks.size()) + " tracks, "
-                  + juce::String(playback.warnings.size()) + " warnings");
+        setStatus("Wrote " + file.getFileName() + ": " + juce::String(exported.tracks.size()) + " tracks, "
+                  + juce::String(exported.warnings.size()) + " warnings");
     }
     catch (const std::exception& e)
     {
@@ -551,7 +567,10 @@ void MainComponent::loadRack()
     rackComponent = content.get();
     rackComponent->openPluginWindow = [this](const juce::String& id) { openPluginWindow(id); };
     rackComponent->closePluginWindow = [this](const juce::String& id) { closePluginWindow(id); };
-    rackComponent->changed = [this] { saveRackSoon.startTimer(1000); };
+    rackComponent->changed = [this] {
+        sequencesReady = false;
+        saveRackSoon.startTimer(1000);
+    };
     rackComponent->saveStates = [this] { saveRack(true); };
     rackWindow = std::make_unique<RackWindow>(std::move(content));
 
@@ -628,5 +647,144 @@ void MainComponent::openPluginWindow(const juce::String& id)
 }
 
 void MainComponent::closePluginWindow(const juce::String& id) { pluginWindows.erase(id); }
+
+void MainComponent::forgetPlayback()
+{
+    if (audio.isPlaying())
+        audio.stop();
+    ++playGeneration; // a preparation still running is for the old score: its result is dropped
+    preparing = false;
+    playback.reset();
+    playedMusic.reset();
+    sequencesReady = false;
+    showPlaying();
+}
+
+void MainComponent::togglePlay()
+{
+    if (audio.isPlaying())
+    {
+        audio.stop();
+        showPlaying();
+        return;
+    }
+    if (!music || preparing)
+        return;
+    if (!playbackSetup)
+    {
+        setStatus("No .setup.json next to the score: nothing says how to play it");
+        return;
+    }
+    if (playback)
+    {
+        startPlaying(0);
+        return;
+    }
+
+    // play() takes seconds on a big score (40 s for smb_3m in Debug), so it runs on
+    // another thread, with copies of the score and setup: they may be edited meanwhile.
+    preparing = true;
+    showPlaying();
+    setStatus("Preparing playback...");
+    struct Prepared
+    {
+        std::shared_ptr<const MusicData> music;
+        std::optional<Playback> playback;
+        std::string error;
+        double ms = 0;
+    };
+    auto prepared = std::make_shared<Prepared>();
+    prepared->music = std::make_shared<const MusicData>(*music);
+    auto setupCopy = std::make_shared<const PlaybackSetup>(*playbackSetup);
+    const int generation = playGeneration;
+    juce::Component::SafePointer<MainComponent> safe(this);
+    preparer.addJob(std::function<void()>([prepared, setupCopy, generation, safe] {
+        const double started = juce::Time::getMillisecondCounterHiRes();
+        try
+        {
+            prepared->playback = play(*prepared->music, *setupCopy);
+        }
+        catch (const std::exception& e)
+        {
+            prepared->error = e.what();
+        }
+        prepared->ms = millisecondsSince(started);
+        juce::MessageManager::callAsync([prepared, generation, safe] {
+            MainComponent* self = safe.getComponent();
+            if (self == nullptr || generation != self->playGeneration)
+                return; // closed, or the score changed since
+            self->preparing = false;
+            if (!prepared->playback)
+            {
+                self->showPlaying();
+                self->setStatus(juce::String::fromUTF8(prepared->error.c_str()));
+                return;
+            }
+            self->playedMusic = prepared->music;
+            self->playback = std::move(prepared->playback);
+            self->sequencesReady = false;
+            self->startPlaying(prepared->ms);
+        });
+    }));
+}
+
+void MainComponent::startPlaying(double preparedMs)
+{
+    std::size_t warnings = 0;
+    if (!sequencesReady)
+    {
+        std::vector<std::string> routing;
+        sequences = buildSequences(*playedMusic, *playback, *playbackSetup, rack, routing);
+        audio.setSequences(sequences);
+        sequencesReady = true;
+        warnings = routing.size();
+    }
+    if (sequences.empty())
+    {
+        showPlaying();
+        setStatus("Nothing to play: no output of the score has a slot in the rack");
+        return;
+    }
+
+    // From the selected note's measure, or the start. A little earlier still, so the
+    // messages a negative track delay moves ahead are sent too.
+    double startMs = 0;
+    juce::String where = "the start";
+    if (!selection.notes.empty())
+    {
+        const NodeId measure = measureOfNote(*playedMusic, selection.notes.front());
+        if (const std::optional<double> ms = measure.empty() ? std::nullopt : measureStartMs(*playback, measure))
+        {
+            startMs = *ms;
+            where = "measure " + juce::String(measure);
+        }
+    }
+    double lead = 0;
+    for (const InstrumentProfile& profile : playbackSetup->instrumentProfiles)
+        lead = std::min(lead, profile.trackDelayMs);
+    const double from = startMs + lead;
+
+    std::vector<PluginSequence> chase;
+    for (const PluginSequence& sequence : sequences)
+        chase.push_back({ sequence.pluginId, chaseMessages(sequence, from) });
+    audio.start(from, chase);
+    showPlaying();
+    playingTimer.startTimer(100);
+
+    juce::String text = "Playing from " + where;
+    if (preparedMs > 0)
+        text << " (prepared in " << juce::roundToInt(preparedMs) << " ms)";
+    if (warnings > 0)
+        text << ", " << juce::String(warnings) << " outputs without a slot (see Rack)";
+    setStatus(text);
+}
+
+void MainComponent::showPlaying()
+{
+    const bool playing = audio.isPlaying();
+    playButton.setButtonText(preparing ? "Preparing..." : playing ? "Stop" : "Play");
+    if (!playing)
+        playingTimer.stopTimer();
+}
 
 } // namespace msd

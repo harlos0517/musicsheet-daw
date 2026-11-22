@@ -55,6 +55,10 @@ private:
     void exportMidi(const juce::File& file);
     void showAudioSettings();
     void showRack();
+    void togglePlay();
+    void startPlaying(double preparedMs); // once `playback` is there
+    void showPlaying(); // the Play button, while playing and once it stops
+    void forgetPlayback(); // after an edit, or another score: play() runs again
     void loadRack();               // rack.json and each plugin's state, at the start
     void saveRack(bool withStates); // rack.json; with the plugins' states too
     void openPluginWindow(const juce::String& pluginId);
@@ -71,6 +75,13 @@ private:
     LayoutSetup setup; // the default profile and the full-score layout, with its flow
     std::optional<MusicData> music;
     std::optional<PlaybackSetup> playbackSetup; // the score's <name>.setup.json, if there is one
+    std::shared_ptr<const MusicData> playedMusic; // the copy of the score `playback` was made from
+    std::optional<Playback> playback;             // play()'s result, until the score changes
+    std::vector<PluginSequence> sequences;      // what the audio host plays, from playback
+    bool sequencesReady = false;                // false after an edit or a rack change
+    bool preparing = false;                     // play() is running on `preparer`
+    int playGeneration = 0;                     // changes when a running play() is for an old score
+    juce::ThreadPool preparer { 1 };
     juce::File scoreFile;
     Selection selection;
     EditHistory history;
@@ -85,6 +96,7 @@ private:
     juce::ToggleButton boundsToggle { "Boxes" };
     juce::TextButton audioButton { "Audio..." };
     juce::TextButton rackButton { "Rack..." };
+    juce::TextButton playButton { "Play" };
     juce::Label statusLabel;
     juce::String status; // shown when nothing is hovered
 
@@ -101,6 +113,7 @@ private:
     std::unique_ptr<juce::DocumentWindow> rackWindow;
     RackComponent* rackComponent = nullptr; // inside rackWindow
     juce::TimedCallback saveRackSoon { [this] { saveRack(false); } };
+    juce::TimedCallback playingTimer { [this] { showPlaying(); } };
 
 #if MSD_ENABLE_INSPECTOR
     std::unique_ptr<melatonin::Inspector> inspector;
