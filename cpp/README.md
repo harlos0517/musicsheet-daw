@@ -194,6 +194,23 @@ The flow lives only in memory for now.
 Scores load on the UI thread: the big ones (`smb_3m`, 77 MB) freeze the window for
 several seconds, longer in Debug.
 
+## Editing
+
+Click a notehead (or its accidental) to select the note; Shift+click adds or
+removes one; Esc or a click elsewhere clears the selection. Then, as in MuseScore:
+
+| Keys | Moves the selected notes |
+|---|---|
+| Up / Down | a semitone: spelled as in the key, else natural, else ♯ up and ♭ down |
+| Alt+Shift+Up / Down | a step in the key |
+| Ctrl+Up / Down | an octave |
+
+Notes tied to a moved note move with it. Ctrl+Z undoes, Ctrl+Y (or Ctrl+Shift+Z)
+redoes. **Export MIDI...** plays the score as it is now, with the `<name>.setup.json`
+next to it, and writes a `.mid` (by default `<name>.edited.mid`, so that the `.mid`
+`pnpm midi` wrote and the tests compare with stays). Edits are not saved: closing
+the app loses them.
+
 ## Licensing
 
 The project is licensed under the AGPLv3 or later (`/LICENSE`). JUCE is used

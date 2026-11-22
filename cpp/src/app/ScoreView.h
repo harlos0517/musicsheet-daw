@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <optional>
+#include <unordered_set>
 #include <vector>
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -22,6 +23,7 @@ public:
     explicit ScoreView(MusicFont& font);
 
     void setPages(std::vector<PageLayout> pages);
+    std::vector<PageLayout> takePages(); // leaves the view empty until setPages
     void clear();
     void setZoom(float pixelsPerSp);
     void setShowBounds(bool show);
@@ -32,8 +34,16 @@ public:
     // Called with "nodeId · part" for the box under the mouse, or "" when there's none.
     std::function<void(const juce::String&)> onHover;
 
+    // Called on a click with the note whose notehead or accidental was clicked, or ""
+    // for anything else, and whether Shift was down.
+    std::function<void(const NodeId& noteId, bool shift)> onNoteClick;
+
+    // The notes drawn as selected: their noteheads and accidentals.
+    void setSelected(std::unordered_set<NodeId> notes);
+
     void paint(juce::Graphics&) override;
     void mouseMove(const juce::MouseEvent&) override;
+    void mouseDown(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
 
 private:
@@ -49,6 +59,7 @@ private:
     Point pageOrigin(std::size_t page) const; // in sp, in this component
     void paintSystem(juce::Graphics& g, const PlacedSystem& placed, Point pageAt,
                      std::optional<std::size_t> hoveredBox);
+    std::optional<BoxRef> boxUnder(juce::Point<float> position) const; // in pixels
     void setHovered(std::optional<BoxRef> box);
     const LayoutBox& boxAt(const BoxRef& ref) const;
 
@@ -60,6 +71,7 @@ private:
     float zoom = 6.0f; // pixels per sp
     bool showBounds = false;
     std::optional<BoxRef> hovered;
+    std::unordered_set<NodeId> selected;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScoreView)
 };

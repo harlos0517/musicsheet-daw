@@ -66,6 +66,12 @@ void ScoreView::setPages(std::vector<PageLayout> newPages)
 
 void ScoreView::clear() { setPages({}); }
 
+std::vector<PageLayout> ScoreView::takePages()
+{
+    hovered.reset();
+    return std::exchange(pages, {});
+}
+
 void ScoreView::setZoom(float pixelsPerSp)
 {
     zoom = pixelsPerSp;
@@ -130,7 +136,11 @@ void ScoreView::paintSystem(juce::Graphics& g, const PlacedSystem& placed, Point
     for (std::size_t i = 0; i < boxes.size(); ++i)
     {
         const LayoutBox& box = boxes[i];
-        g.setColour(hoveredBox == i ? juce::Colour(0xff1565c0) : juce::Colours::black);
+        const bool isSelected =
+            (box.part == Part::Notehead || box.part == Part::Accidental) && selected.contains(box.nodeId);
+        g.setColour(hoveredBox == i ? juce::Colour(0xff1565c0)
+                    : isSelected    ? juce::Colour(0xffe65100)
+                                    : juce::Colours::black);
 
         if (const auto* glyph = std::get_if<GlyphShape>(&box.shape))
         {
@@ -174,10 +184,10 @@ void ScoreView::paintSystem(juce::Graphics& g, const PlacedSystem& placed, Point
     }
 }
 
-void ScoreView::mouseMove(const juce::MouseEvent& event)
+std::optional<ScoreView::BoxRef> ScoreView::boxUnder(juce::Point<float> position) const
 {
     // Back from pixels to sp, then the topmost box there (the last one painted).
-    const Point sp { event.position.x / zoom, event.position.y / zoom };
+    const Point sp { position.x / zoom, position.y / zoom };
     for (std::size_t p = 0; p < pages.size(); ++p)
     {
         const Point at = pageOrigin(p);
@@ -193,14 +203,28 @@ void ScoreView::mouseMove(const juce::MouseEvent& event)
                 const Rect& r = boxes[i].bounds;
                 if (boxes[i].part != Part::StaffLine && local.x >= r.left && local.x <= r.right && local.y >= r.top
                     && local.y <= r.bottom)
-                {
-                    setHovered(BoxRef { p, s, i });
-                    return;
-                }
+                    return BoxRef { p, s, i };
             }
         }
     }
-    setHovered(std::nullopt);
+    return std::nullopt;
+}
+
+void ScoreView::mouseMove(const juce::MouseEvent& event) { setHovered(boxUnder(event.position)); }
+
+void ScoreView::mouseDown(const juce::MouseEvent& event)
+{
+    if (!onNoteClick)
+        return;
+    const std::optional<BoxRef> box = boxUnder(event.position);
+    const bool note = box && (boxAt(*box).part == Part::Notehead || boxAt(*box).part == Part::Accidental);
+    onNoteClick(note ? boxAt(*box).nodeId : NodeId {}, event.mods.isShiftDown());
+}
+
+void ScoreView::setSelected(std::unordered_set<NodeId> notes)
+{
+    selected = std::move(notes);
+    repaint();
 }
 
 void ScoreView::mouseExit(const juce::MouseEvent&) { setHovered(std::nullopt); }

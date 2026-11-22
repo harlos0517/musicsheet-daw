@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <exception>
 #include <string_view>
+#include <unordered_set>
 
 #include "BinaryData.h"
 #include "core/json/Load.h"
 #include "layout/PageLayout.h"
+#include "playback/Play.h"
 
 namespace msd
 {
@@ -47,6 +49,8 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
         reflowScore();
         relayout();
     };
+    exportButton.setTooltip("Play the score as it is now and write a MIDI file");
+    exportButton.onClick = [this] { chooseMidiFile(); };
     zoomSlider.setRange(2, 30, 0.5);
     zoomSlider.setValue(6, juce::dontSendNotification);
     zoomSlider.onValueChange = [this] { scoreView.setZoom(static_cast<float>(zoomSlider.getValue())); };
@@ -55,11 +59,15 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     scoreView.onHover = [this](const juce::String& text) {
         statusLabel.setText(text.isEmpty() ? status : text, juce::dontSendNotification);
     };
+    scoreView.onNoteClick = [this](const NodeId& noteId, bool shift) { clickNote(noteId, shift); };
     viewport.setViewedComponent(&scoreView, false);
+    // The arrow keys move notes, so the viewport must not take them for scrolling.
+    viewport.setWantsKeyboardFocus(false);
     viewport.setScrollBarsShown(true, true);
 
-    for (juce::Component* c : std::initializer_list<juce::Component*> {
-             &openButton, &fileLabel, &reflowButton, &zoomLabel, &zoomSlider, &boundsToggle, &statusLabel, &viewport })
+    for (juce::Component* c :
+         std::initializer_list<juce::Component*> { &openButton, &fileLabel, &reflowButton, &exportButton, &zoomLabel,
+                                                   &zoomSlider, &boundsToggle, &statusLabel, &viewport })
         addAndMakeVisible(c);
 
     setSize(1000, 800);
@@ -102,8 +110,9 @@ void MainComponent::resized()
     };
     toolbar.items = {
         item(openButton, 80),   item(fileLabel, 200).withFlex(1).withMinWidth(100),
-        item(reflowButton, 80), item(zoomLabel, 44),
-        item(zoomSlider, 160),  item(boundsToggle, 72),
+        item(reflowButton, 80), item(exportButton, 110),
+        item(zoomLabel, 44),    item(zoomSlider, 160),
+        item(boundsToggle, 72),
     };
     toolbar.performLayout(area.removeFromTop(40));
 
@@ -113,6 +122,41 @@ void MainComponent::resized()
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
+    // The MuseScore keys: Up/Down a semitone, Alt+Shift+Up/Down a step in the key,
+    // Ctrl+Up/Down an octave.
+    const int code = key.getKeyCode();
+    const juce::ModifierKeys mods = key.getModifiers();
+    if (code == juce::KeyPress::upKey || code == juce::KeyPress::downKey)
+    {
+        const bool up = code == juce::KeyPress::upKey;
+        if (mods.isAltDown() && mods.isShiftDown() && !mods.isCommandDown())
+            movePitch(up ? PitchMove::StepUp : PitchMove::StepDown);
+        else if (mods.isCommandDown() && !mods.isAltDown() && !mods.isShiftDown())
+            movePitch(up ? PitchMove::OctaveUp : PitchMove::OctaveDown);
+        else if (!mods.isAnyModifierKeyDown())
+            movePitch(up ? PitchMove::SemitoneUp : PitchMove::SemitoneDown);
+        else
+            return false;
+        return true;
+    }
+    if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0))
+    {
+        undo();
+        return true;
+    }
+    if (key == juce::KeyPress('y', juce::ModifierKeys::commandModifier, 0)
+        || key == juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0))
+    {
+        redo();
+        return true;
+    }
+    if (code == juce::KeyPress::escapeKey && !selection.notes.empty())
+    {
+        selection.notes.clear();
+        showSelection();
+        return true;
+    }
+
 #if MSD_ENABLE_INSPECTOR
     if (key == juce::KeyPress('i', juce::ModifierKeys::commandModifier, 0))
     {
@@ -154,6 +198,10 @@ void MainComponent::openScore(const juce::File& file)
         return;
     }
     fileLabel.setText(file.getFileName(), juce::dontSendNotification);
+    scoreFile = file;
+    history.clear();
+    selection.notes.clear();
+    scoreView.setSelected({});
 
     // Large scores use smaller staves: the default profile, unless one of its systems
     // would be taller than the page.
@@ -236,6 +284,144 @@ void MainComponent::setStatus(const juce::String& text)
 {
     status = text;
     statusLabel.setText(text, juce::dontSendNotification);
+}
+
+void MainComponent::clickNote(const NodeId& noteId, bool shift)
+{
+    grabKeyboardFocus(); // for the arrow keys
+    std::vector<NodeId>& notes = selection.notes;
+    if (noteId.empty())
+    {
+        if (shift || notes.empty())
+            return;
+        notes.clear();
+    }
+    else if (shift)
+    {
+        const auto found = std::find(notes.begin(), notes.end(), noteId);
+        if (found == notes.end())
+            notes.push_back(noteId);
+        else
+            notes.erase(found);
+    }
+    else
+        notes = { noteId };
+    showSelection();
+}
+
+void MainComponent::showSelection()
+{
+    scoreView.setSelected(std::unordered_set<NodeId>(selection.notes.begin(), selection.notes.end()));
+    const std::size_t count = selection.notes.size();
+    setStatus(count == 0   ? juce::String("Nothing selected")
+              : count == 1 ? juce::String(selection.notes[0]) + " selected"
+                           : juce::String(count) + " notes selected");
+}
+
+void MainComponent::movePitch(PitchMove move)
+{
+    if (!music || selection.notes.empty())
+        return;
+    Edit edit = movePitches(*music, selection.notes, move);
+    if (edit.changes.empty())
+        return;
+    const juce::String what = juce::String(edit.name) + ": " + juce::String(edit.changes.size()) + " notes";
+    const std::vector<NodeId> measures = editedMeasures(*music, edit);
+    history.apply(*music, std::move(edit));
+    edited(what, measures);
+}
+
+void MainComponent::undo()
+{
+    if (!music || history.nextUndo() == nullptr)
+        return;
+    const juce::String what = "Undo " + juce::String(history.nextUndo()->name).toLowerCase();
+    const std::vector<NodeId> measures = editedMeasures(*music, *history.nextUndo());
+    history.undo(*music);
+    edited(what, measures);
+}
+
+void MainComponent::redo()
+{
+    if (!music || history.nextRedo() == nullptr)
+        return;
+    const juce::String what = "Redo " + juce::String(history.nextRedo()->name).toLowerCase();
+    const std::vector<NodeId> measures = editedMeasures(*music, *history.nextRedo());
+    history.redo(*music);
+    edited(what, measures);
+}
+
+void MainComponent::edited(const juce::String& what, const std::vector<NodeId>& measures)
+{
+    // The flow stays: systems and pages stay where they are. Only the systems with
+    // changed measures are laid out again, unless the pages don't match the flow.
+    const juce::Point<int> scrolled = viewport.getViewPosition();
+    const double started = juce::Time::getMillisecondCounterHiRes();
+    const Layout& layout = setup.layouts.at(0);
+    std::vector<PageLayout> pages = scoreView.takePages();
+    bool partly = false;
+    try
+    {
+        partly =
+            layout.flow
+            && relayoutMeasures({ .music = *music, .profile = profile(), .font = font->metadata(), .layout = layout },
+                                *layout.flow, measures, pages);
+    }
+    catch (const std::exception&)
+    {
+        partly = false; // relayout() reports it
+    }
+    if (partly)
+        scoreView.setPages(std::move(pages));
+    else
+        relayout();
+    const double layoutMs = millisecondsSince(started);
+    viewport.setViewPosition(scrolled);
+    scoreView.setSelected(std::unordered_set<NodeId>(selection.notes.begin(), selection.notes.end()));
+    setStatus(what + " (layout " + juce::String(juce::roundToInt(layoutMs)) + " ms)");
+}
+
+void MainComponent::chooseMidiFile()
+{
+    if (!music)
+        return;
+    // Not <name>.mid: pnpm midi writes that one, and the tests compare with it.
+    const juce::String name = scoreFile.getFileName().upToLastOccurrenceOf(".music.json", false, true);
+    chooser =
+        std::make_unique<juce::FileChooser>("Export MIDI", scoreFile.getSiblingFile(name + ".edited.mid"), "*.mid");
+    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                             | juce::FileBrowserComponent::warnAboutOverwriting,
+                         [this](const juce::FileChooser& fc) {
+                             if (fc.getResult() != juce::File())
+                                 exportMidi(fc.getResult());
+                         });
+}
+
+void MainComponent::exportMidi(const juce::File& file)
+{
+    // Played with the setup the score was exported with, next to it.
+    const juce::String name = scoreFile.getFileName().upToLastOccurrenceOf(".music.json", false, true);
+    const juce::File setupFile = scoreFile.getSiblingFile(name + ".setup.json");
+    if (!setupFile.existsAsFile())
+    {
+        setStatus("No playback setup: " + setupFile.getFullPathName() + " is missing");
+        return;
+    }
+    try
+    {
+        const Playback playback = play(*music, loadPlaybackSetup(setupFile.getFullPathName().toStdString()));
+        if (!file.replaceWithData(playback.file.data(), playback.file.size()))
+        {
+            setStatus("Could not write " + file.getFullPathName());
+            return;
+        }
+        setStatus("Wrote " + file.getFileName() + ": " + juce::String(playback.tracks.size()) + " tracks, "
+                  + juce::String(playback.warnings.size()) + " warnings");
+    }
+    catch (const std::exception& e)
+    {
+        setStatus(juce::String::fromUTF8(e.what()));
+    }
 }
 
 } // namespace msd

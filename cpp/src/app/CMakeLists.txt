@@ -33,6 +33,8 @@ target_link_libraries(MusicsheetDawApp
     PRIVATE
         MsdAppData
         msd_layout
+        msd_playback
+        msd_edit
         juce::juce_gui_basics
         juce::juce_graphics
         juce::juce_core
