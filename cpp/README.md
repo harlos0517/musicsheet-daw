@@ -84,6 +84,12 @@ cpp/
 │   │   ├── SystemLayout.h          one system: spacing, notes, beams, barlines
 │   │   ├── Accidentals.h, Transpose.h, StaffPosition.h
 │   │   └── SmuflFont.h, SmuflGlyphNames.h, Geometry.h
+│   ├── playback/                   library msd_playback: MusicData + PlaybackSetup → MIDI, no JUCE
+│   │                               (being ported from prototype-web/src/core/playback)
+│   │   ├── Timeline.h              measures and voice events in written time
+│   │   ├── Repeats.h               the order measures are played in
+│   │   ├── ScoreIndex.h            every event by ID; anchors → positions
+│   │   └── Tempo.h                 the tempo map: played ticks ↔ ms
 │   └── app/                        the JUCE window: MainComponent, ScoreView, MusicFont
 └── tests/                          Catch2 unit tests (msd_tests)
 ```

@@ -34,6 +34,7 @@ include(cmake/Notices.cmake)
 
 add_subdirectory(src/core)
 add_subdirectory(src/layout)
+add_subdirectory(src/playback)
 add_subdirectory(src/app)
 
 if(MSD_BUILD_TESTS)
