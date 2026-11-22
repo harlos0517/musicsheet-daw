@@ -268,10 +268,15 @@ public:
 
     BuiltNotes build()
     {
+        // Each measure's chords, in the order chords() has them, so that every pass through
+        // a measure finds them without going through the whole track.
+        std::unordered_map<int, std::vector<const Placed*>> byMeasure;
+        for (const Placed& placed : chords())
+            byMeasure[placed.measureIndex].push_back(&placed);
         for (std::size_t playedAt = 0; playedAt < ctx_.played.size(); ++playedAt)
-            for (const Placed& placed : chords())
-                if (placed.measureIndex == ctx_.played[playedAt].measureIndex)
-                    playChord(placed, playedAt);
+            if (const auto found = byMeasure.find(ctx_.played[playedAt].measureIndex); found != byMeasure.end())
+                for (const Placed* placed : found->second)
+                    playChord(*placed, playedAt);
         shortenBeforeEarlyGraces();
         std::stable_sort(notes_.begin(), notes_.end(),
                          [](const NoteEvent& a, const NoteEvent& b) { return a.startTick < b.startTick; });
@@ -384,6 +389,23 @@ private:
         }
         std::stable_sort(markings_.begin(), markings_.end(),
                          [](const Marking& a, const Marking& b) { return a.tick < b.tick; });
+        // Indexes, so that a chord does not go through every marking of the track.
+        for (std::size_t i = 0; i < markings_.size(); ++i)
+        {
+            const TechniqueMarking& marking = *markings_[i].marking;
+            if (marking.scope == TechniqueScope::This)
+            {
+                if (const auto* element = std::get_if<ElementAnchor>(&marking.at))
+                    thisMarkings_[element->id].push_back(i);
+            }
+            else
+            {
+                lastingMarkings_.push_back(i);
+            }
+            markingGroups_.push_back(groupOf(marking.techniqueId));
+        }
+        for (std::size_t i = 0; i < dynamicMarks_.size(); ++i)
+            dynamicsByTick_[dynamicMarks_[i].tick].push_back(i);
 
         for (const TrackSpanner& spanner : track.trackSpanners)
         {
@@ -428,9 +450,15 @@ private:
     std::vector<DynamicType> dynamicsFor(const Placed& placed) const
     {
         std::vector<DynamicType> types;
-        for (const DynamicMark& mark : dynamicMarks_)
-            if (mark.tick == placed.absTick && inScope(placed, mark.dynamic->staffIds, mark.dynamic->voiceIndexes))
+        const auto atTick = dynamicsByTick_.find(placed.absTick);
+        if (atTick == dynamicsByTick_.end())
+            return types;
+        for (const std::size_t i : atTick->second)
+        {
+            const DynamicMark& mark = dynamicMarks_[i];
+            if (inScope(placed, mark.dynamic->staffIds, mark.dynamic->voiceIndexes))
                 types.push_back(mark.dynamic->type);
+        }
         return types;
     }
 
@@ -451,36 +479,42 @@ private:
         std::vector<std::pair<std::string, std::string>> lasting; // group → technique, in first-set order
         std::vector<std::string> result;
         const Chord& chord = placed.chord();
-        const auto onChord = [&](const NodeId& id) {
-            if (id == chord.id)
-                return true;
-            return std::any_of(chord.notes.begin(), chord.notes.end(),
-                               [&](const ChordNote& note) { return noteId(note) == id; });
+        const auto applies = [&](const TechniqueMarking& marking) {
+            return (!marking.passes || contains(*marking.passes, pass))
+                   && inScope(placed, marking.staffIds, marking.voiceIndexes);
         };
-        for (const Marking& entry : markings_)
+        // Markings that last, in order up to this chord (they are sorted by tick).
+        for (const std::size_t i : lastingMarkings_)
         {
+            const Marking& entry = markings_[i];
+            if (entry.tick > placed.absTick)
+                break;
             const TechniqueMarking& marking = *entry.marking;
-            if (marking.passes && !contains(*marking.passes, pass))
+            if (!applies(marking))
                 continue;
-            if (!inScope(placed, marking.staffIds, marking.voiceIndexes))
-                continue;
-            if (marking.scope == TechniqueScope::This)
-            {
-                const auto* element = std::get_if<ElementAnchor>(&marking.at);
-                if (element && onChord(element->id))
-                    result.push_back(marking.techniqueId);
-            }
-            else if (entry.tick <= placed.absTick)
-            {
-                const std::string group = groupOf(marking.techniqueId);
-                const auto found =
-                    std::find_if(lasting.begin(), lasting.end(), [&](const auto& item) { return item.first == group; });
-                if (found != lasting.end())
-                    found->second = marking.techniqueId;
-                else
-                    lasting.emplace_back(group, marking.techniqueId);
-            }
+            const std::string& group = markingGroups_[i];
+            const auto found =
+                std::find_if(lasting.begin(), lasting.end(), [&](const auto& item) { return item.first == group; });
+            if (found != lasting.end())
+                found->second = marking.techniqueId;
+            else
+                lasting.emplace_back(group, marking.techniqueId);
         }
+        // Markings on this chord or one of its notes, in the order of markings_.
+        std::vector<std::size_t> own;
+        const auto onElement = [&](const NodeId& id) {
+            if (const auto found = thisMarkings_.find(id); found != thisMarkings_.end())
+                own.insert(own.end(), found->second.begin(), found->second.end());
+        };
+        onElement(chord.id);
+        for (const ChordNote& note : chord.notes)
+            if (noteId(note) != chord.id)
+                onElement(noteId(note));
+        std::sort(own.begin(), own.end());
+        own.erase(std::unique(own.begin(), own.end()), own.end());
+        for (const std::size_t i : own)
+            if (applies(*markings_[i].marking))
+                result.push_back(markings_[i].marking->techniqueId);
         for (const CustomSpan& span : customSpans_)
         {
             const CustomSpanner& spanner = *span.spanner;
@@ -1130,9 +1164,13 @@ private:
     std::vector<const NoteEventOverride*> overrides_;
 
     std::unordered_map<NodeId, const Placed*> tieSources_;
-    std::vector<Marking> markings_;
+    std::vector<Marking> markings_; // by tick
+    std::unordered_map<NodeId, std::vector<std::size_t>> thisMarkings_; // element → its "this" markings
+    std::vector<std::size_t> lastingMarkings_;                          // the others, by tick
+    std::vector<std::string> markingGroups_;                            // groupOf each marking
     std::vector<CustomSpan> customSpans_;
     std::vector<DynamicMark> dynamicMarks_;
+    std::map<double, std::vector<std::size_t>> dynamicsByTick_; // into dynamicMarks_, in order
     std::vector<HairpinSpan> hairpinSpans_;
     std::unordered_map<NodeId, TremoloPair> tremoloPairs_;
     std::unordered_map<NodeId, SlurPosition> slurPositions_;  // chord ID → place in a slur, as played
