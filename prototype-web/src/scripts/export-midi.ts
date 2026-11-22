@@ -3,8 +3,8 @@
  * the C++ app), the PlaybackSetup it was played with (`.setup.json`), the played order
  * of the measures and the tempo map (`.timing.json`), and the MusicEvents and MIDI
  * messages behind it as JSON, into `midi-out/`. MusicXML files in `scores/` are
- * imported, checked and written too, each with its setup, timing and a report of what
- * the import left out. Run with `pnpm midi`.
+ * imported, checked and written too, each with its setup, timing, MusicEvents and a
+ * report of what the import left out. Run with `pnpm midi`.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
@@ -74,6 +74,7 @@ for (const file of files) {
   const result = play(music, setup)
   writeTiming(name, result)
   writeFileSync(resolve(out, `${name}.mid`), result.file)
+  writeFileSync(resolve(out, `${name}.events.json`), JSON.stringify(result.events, null, 2))
 
   const count = (items: string[]) => {
     const counts = new Map<string, number>()
