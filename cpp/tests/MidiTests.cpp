@@ -1,12 +1,15 @@
-// MusicEvents → MIDI messages. Ported from the TS tests in playback.test.ts, and
-// checked against the *.midi.json files `pnpm midi` writes.
+// MusicEvents → MIDI messages → a MIDI file. Ported from the TS tests in
+// playback.test.ts, and checked against the *.midi.json and *.mid files `pnpm midi`
+// writes.
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -14,6 +17,7 @@
 
 #include "core/json/Load.h"
 #include "playback/BuildEvents.h"
+#include "playback/MidiFile.h"
 #include "playback/RenderMidi.h"
 
 using namespace msd;
@@ -120,6 +124,31 @@ void compareWithExported(const std::string& name)
         }
         CHECK(different == 0);
     }
+}
+
+// The whole chain, as play() in index.ts runs it, down to the file's bytes.
+std::vector<std::uint8_t> playToFile(const MusicData& music, const PlaybackSetup& setup)
+{
+    EventResult result = buildMusicEvents(music, setup);
+    const std::vector<RenderedTrack> tracks = renderTracks(music, setup, result.events, result.tempo, result.warnings);
+    return writeMidiFile(music.title, music.tpq, result.tempo, result.played, measureTimeline(music), tracks);
+}
+
+// Compares the file C++ writes with the .mid the TS wrote, byte for byte, and says
+// where they first differ.
+void compareFileWithExported(const std::string& name)
+{
+    INFO(name);
+    const MusicData music = loadMusicData(exported / (name + ".music.json"));
+    const PlaybackSetup setup = loadPlaybackSetup(exported / (name + ".setup.json"));
+    std::ifstream in(exported / (name + ".mid"), std::ios::binary);
+    const std::vector<std::uint8_t> expected { std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
+
+    const std::vector<std::uint8_t> actual = playToFile(music, setup);
+    CHECK(actual.size() == expected.size());
+    const auto [mine, theirs] = std::mismatch(actual.begin(), actual.end(), expected.begin(), expected.end());
+    INFO("first difference at byte " << (mine - actual.begin()));
+    CHECK((mine == actual.end() && theirs == expected.end()));
 }
 
 } // namespace
@@ -233,4 +262,67 @@ TEST_CASE("MIDI messages match every exported score", "[.][exported]")
         }
     if (compared == 0)
         SKIP("no " << exported.string() << "/*.midi.json; run pnpm midi in prototype-web first");
+}
+
+TEST_CASE("a pickup bar and a short last bar get their own time signature", "[playback][midi]")
+{
+    requireExported("melody.setup.json");
+    const MusicData music = loadMusicData(exported / "melody.music.json");
+    const PlaybackSetup setup = loadPlaybackSetup(exported / "melody.setup.json");
+    const std::vector<std::uint8_t> file = playToFile(music, setup);
+
+    // The conductor track is the first after the 14-byte header; its events carry no
+    // running status, and its delta times here all fit in two bytes.
+    std::vector<std::pair<int, std::string>> signatures;
+    std::size_t at = 14 + 8;
+    int tick = 0;
+    for (;;)
+    {
+        int delta = 0;
+        for (;;)
+        {
+            const std::uint8_t b = file.at(at++);
+            delta = delta * 128 + (b & 0x7f);
+            if (b < 0x80)
+                break;
+        }
+        tick += delta;
+        REQUIRE(file.at(at++) == 0xff);
+        const std::uint8_t type = file.at(at++);
+        const std::size_t length = file.at(at++);
+        if (type == 0x58)
+            signatures.emplace_back(tick, std::to_string(file.at(at)) + "/" + std::to_string(1 << file.at(at + 1)));
+        at += length;
+        if (type == 0x2f)
+            break;
+    }
+    // Two eighths of pickup, three full bars, then the three beats that complete it.
+    CHECK(signatures == std::vector<std::pair<int, std::string>> { { 0, "1/4" }, { 960, "4/4" }, { 12480, "3/4" } });
+}
+
+TEST_CASE("the example scores' MIDI files are the ones TS writes", "[playback][midi]")
+{
+    for (const std::string name : { "melody", "band", "piano", "strings" })
+    {
+        requireExported(name + ".mid");
+        compareFileWithExported(name);
+    }
+}
+
+// Run with: msd_tests "[exported]"
+TEST_CASE("the MIDI file of every exported score is the one TS writes", "[.][exported]")
+{
+    int compared = 0;
+    if (std::filesystem::exists(exported))
+        for (const auto& entry : std::filesystem::directory_iterator(exported))
+        {
+            const std::string file = entry.path().filename().string();
+            // *.visual.mid are written by another script.
+            if (!file.ends_with(".mid") || file.ends_with(".visual.mid"))
+                continue;
+            compareFileWithExported(file.substr(0, file.size() - 4));
+            ++compared;
+        }
+    if (compared == 0)
+        SKIP("no " << exported.string() << "/*.mid; run pnpm midi in prototype-web first");
 }
