@@ -9,7 +9,8 @@ add_executable(msd_tests
     EventTests.cpp
     MidiTests.cpp
     EditTests.cpp
-    RackTests.cpp)
+    RackTests.cpp
+    SequenceTests.cpp)
 
 target_link_libraries(msd_tests PRIVATE msd_core msd_layout msd_playback msd_edit nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
 

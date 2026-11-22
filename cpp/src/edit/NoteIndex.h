@@ -43,6 +43,9 @@ private:
     std::unordered_map<NodeId, Entry> notes;
 };
 
+// The measure a pitched note is in; "" for an ID that is no pitched note.
+NodeId measureOfNote(const MusicData& music, const NodeId& noteId);
+
 namespace detail
 {
 

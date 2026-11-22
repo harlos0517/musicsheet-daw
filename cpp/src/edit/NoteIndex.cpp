@@ -23,6 +23,16 @@ NoteIndex::NoteIndex(const MusicData& music)
                 }
 }
 
+NodeId measureOfNote(const MusicData& music, const NodeId& noteId)
+{
+    NodeId measure;
+    forEachNote(music, [&](const Note& note, int, const NodeId& measureId) {
+        if (measure.empty() && note.id == noteId)
+            measure = measureId;
+    });
+    return measure;
+}
+
 const NoteIndex::Entry* NoteIndex::find(const NodeId& id) const
 {
     const auto found = notes.find(id);

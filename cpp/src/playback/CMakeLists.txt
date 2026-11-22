@@ -18,6 +18,8 @@ add_library(msd_playback STATIC
     Play.h
     Rack.cpp
     Rack.h
+    Sequence.cpp
+    Sequence.h
     RenderMidi.cpp
     RenderMidi.h
     Repeats.cpp
