@@ -252,7 +252,7 @@ far before it as the most negative track delay. **Stop** lets go of every soundi
 note and sends All Notes Off on each channel used.
 
 The first Play runs `play()` on another thread, with a copy of the score: it takes
-6 s for paroniie and 40 s for `smb_3m` in Debug. Its result is kept until the score
+2 s for paroniie and 13 s for `smb_3m` in Debug (under 1 s in Release). Its result is kept until the score
 is edited or another one is opened; a rack change only routes it again. Closing the
 app while it runs waits for it.
 

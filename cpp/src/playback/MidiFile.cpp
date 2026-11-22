@@ -31,19 +31,23 @@ Bytes uint(std::uint32_t value, int bytes)
     return result;
 }
 
-// MIDI variable-length quantity.
-Bytes vlq(std::uint32_t value)
+// MIDI variable-length quantity: seven bits a byte, the highest first, every byte but
+// the last with its top bit set.
+void appendVlq(Bytes& to, std::uint32_t value)
 {
-    Bytes result { static_cast<std::uint8_t>(value & 0x7f) };
+    std::uint8_t reversed[5];
+    int count = 0;
+    reversed[count++] = static_cast<std::uint8_t>(value & 0x7f);
     for (std::uint32_t rest = value >> 7; rest > 0; rest >>= 7)
-        result.insert(result.begin(), static_cast<std::uint8_t>((rest & 0x7f) | 0x80));
-    return result;
+        reversed[count++] = static_cast<std::uint8_t>((rest & 0x7f) | 0x80);
+    while (count > 0)
+        to.push_back(reversed[--count]);
 }
 
 Bytes meta(std::uint8_t type, const Bytes& data)
 {
     Bytes result { 0xff, type };
-    append(result, vlq(static_cast<std::uint32_t>(data.size())));
+    appendVlq(result, static_cast<std::uint32_t>(data.size()));
     append(result, data);
     return result;
 }
@@ -62,20 +66,41 @@ struct TimedBytes
     Bytes bytes;
 };
 
+// A track as it is written, event by event: the time since the last one (never less
+// than nothing), then the event's bytes. Written into one buffer, so that a track of a
+// million messages is not a million small vectors.
+class TrackData
+{
+public:
+    explicit TrackData(std::size_t events) { data_.reserve(events * 4 + 32); }
+
+    void add(double tick, const std::uint8_t* bytes, std::size_t size)
+    {
+        const double at = std::max(last_, jsRound(tick));
+        appendVlq(data_, static_cast<std::uint32_t>(at - last_));
+        data_.insert(data_.end(), bytes, bytes + size);
+        last_ = at;
+    }
+    void add(double tick, const Bytes& bytes) { add(tick, bytes.data(), bytes.size()); }
+
+    Bytes chunk()
+    {
+        data_.push_back(0);
+        append(data_, meta(0x2f, {}));
+        return msd::chunk("MTrk", data_);
+    }
+
+private:
+    Bytes data_;
+    double last_ = 0;
+};
+
 Bytes trackChunk(const std::vector<TimedBytes>& events)
 {
-    Bytes data;
-    double last = 0;
+    TrackData data(events.size());
     for (const TimedBytes& event : events)
-    {
-        const double tick = std::max(last, jsRound(event.tick));
-        append(data, vlq(static_cast<std::uint32_t>(tick - last)));
-        append(data, event.bytes);
-        last = tick;
-    }
-    data.push_back(0);
-    append(data, meta(0x2f, {}));
-    return chunk("MTrk", data);
+        data.add(event.tick, event.bytes);
+    return data.chunk();
 }
 
 struct Signature
@@ -144,12 +169,13 @@ std::vector<std::uint8_t> writeMidiFile(const std::string& title, int tpq, const
         {
             double tick;
             int order;
-            Bytes bytes;
+            std::uint8_t bytes[3];
         };
         std::vector<Event> events;
         events.reserve(track.messages.size());
+        TempoMap::Cursor cursor(tempo); // the messages are in time order
         for (const MidiMessage& message : track.messages)
-            events.push_back({ jsRound(tempo.msToTick(message.timeMs)),
+            events.push_back({ jsRound(cursor.msToTick(message.timeMs)),
                                messageOrder(message),
                                { static_cast<std::uint8_t>(status(message.type) | byte(message.channel - 1)),
                                  byte(message.data1), byte(message.data2) } });
@@ -157,11 +183,11 @@ std::vector<std::uint8_t> writeMidiFile(const std::string& title, int tpq, const
             return a.tick != b.tick ? a.tick < b.tick : a.order < b.order;
         });
 
-        std::vector<TimedBytes> timed { { 0, meta(0x03, text(track.name)) } };
-        timed.reserve(events.size() + 1);
-        for (Event& event : events)
-            timed.push_back({ event.tick, std::move(event.bytes) });
-        chunks.push_back(trackChunk(timed));
+        TrackData data(events.size() + 1);
+        data.add(0, meta(0x03, text(track.name)));
+        for (const Event& event : events)
+            data.add(event.tick, event.bytes, 3);
+        chunks.push_back(data.chunk());
     }
 
     Bytes data = uint(1, 2);
