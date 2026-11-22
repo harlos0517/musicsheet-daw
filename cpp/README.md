@@ -85,7 +85,8 @@ cpp/
 │   │   ├── Accidentals.h, Transpose.h, StaffPosition.h
 │   │   └── SmuflFont.h, SmuflGlyphNames.h, Geometry.h
 │   ├── playback/                   library msd_playback: MusicData + PlaybackSetup → MIDI, no JUCE
-│   │                               (being ported from prototype-web/src/core/playback)
+│   │                               (ported from prototype-web/src/core/playback)
+│   │   ├── Play.h                  play(): the whole chain, score + setup → a .mid file
 │   │   ├── Timeline.h              measures and voice events in written time
 │   │   ├── Repeats.h               the order measures are played in
 │   │   ├── ScoreIndex.h            every event by ID; anchors → positions

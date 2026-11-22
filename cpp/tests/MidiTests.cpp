@@ -1,5 +1,5 @@
-// MusicEvents → MIDI messages → a MIDI file. Ported from the TS tests in
-// playback.test.ts, and checked against the *.midi.json and *.mid files `pnpm midi`
+// MusicEvents → MIDI messages → a MIDI file, through play(). Ported from the TS tests
+// in playback.test.ts, and checked against the *.midi.json and *.mid files `pnpm midi`
 // writes.
 
 #include <catch2/catch_test_macros.hpp>
@@ -16,9 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "core/json/Load.h"
-#include "playback/BuildEvents.h"
-#include "playback/MidiFile.h"
-#include "playback/RenderMidi.h"
+#include "playback/Play.h"
 
 using namespace msd;
 
@@ -96,8 +94,7 @@ void compareWithExported(const std::string& name)
     std::ifstream in(exported / (name + ".midi.json"));
     const nlohmann::json expected = nlohmann::json::parse(in);
 
-    EventResult result = buildMusicEvents(music, setup);
-    const std::vector<RenderedTrack> tracks = renderTracks(music, setup, result.events, result.tempo, result.warnings);
+    const std::vector<RenderedTrack> tracks = play(music, setup).tracks;
     REQUIRE(tracks.size() == expected.size());
     for (std::size_t t = 0; t < tracks.size(); ++t)
     {
@@ -126,14 +123,6 @@ void compareWithExported(const std::string& name)
     }
 }
 
-// The whole chain, as play() in index.ts runs it, down to the file's bytes.
-std::vector<std::uint8_t> playToFile(const MusicData& music, const PlaybackSetup& setup)
-{
-    EventResult result = buildMusicEvents(music, setup);
-    const std::vector<RenderedTrack> tracks = renderTracks(music, setup, result.events, result.tempo, result.warnings);
-    return writeMidiFile(music.title, music.tpq, result.tempo, result.played, measureTimeline(music), tracks);
-}
-
 // Compares the file C++ writes with the .mid the TS wrote, byte for byte, and says
 // where they first differ.
 void compareFileWithExported(const std::string& name)
@@ -144,7 +133,7 @@ void compareFileWithExported(const std::string& name)
     std::ifstream in(exported / (name + ".mid"), std::ios::binary);
     const std::vector<std::uint8_t> expected { std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
 
-    const std::vector<std::uint8_t> actual = playToFile(music, setup);
+    const std::vector<std::uint8_t> actual = play(music, setup).file;
     CHECK(actual.size() == expected.size());
     const auto [mine, theirs] = std::mismatch(actual.begin(), actual.end(), expected.begin(), expected.end());
     INFO("first difference at byte " << (mine - actual.begin()));
@@ -226,8 +215,7 @@ TEST_CASE("a keyswitch is pressed again when only its velocity changes", "[playb
         TechniqueMapping { .matches = { TechniqueMatch { "core:staccato" } }, .keyswitch = Keyswitch { 24, 30 } },
     };
     setup.instrumentProfiles = { wind };
-    EventResult result = buildMusicEvents(music, setup);
-    const std::vector<RenderedTrack> tracks = renderTracks(music, setup, result.events, result.tempo, result.warnings);
+    const std::vector<RenderedTrack> tracks = play(music, setup).tracks;
     REQUIRE_FALSE(tracks.empty());
     std::vector<std::pair<int, int>> presses;
     for (const MidiMessage& m : tracks[0].messages)
@@ -269,7 +257,7 @@ TEST_CASE("a pickup bar and a short last bar get their own time signature", "[pl
     requireExported("melody.setup.json");
     const MusicData music = loadMusicData(exported / "melody.music.json");
     const PlaybackSetup setup = loadPlaybackSetup(exported / "melody.setup.json");
-    const std::vector<std::uint8_t> file = playToFile(music, setup);
+    const std::vector<std::uint8_t> file = play(music, setup).file;
 
     // The conductor track is the first after the 14-byte header; its events carry no
     // running status, and its delta times here all fit in two bytes.
@@ -325,4 +313,24 @@ TEST_CASE("the MIDI file of every exported score is the one TS writes", "[.][exp
         }
     if (compared == 0)
         SKIP("no " << exported.string() << "/*.mid; run pnpm midi in prototype-web first");
+}
+
+TEST_CASE("a track without outputs is left out of the file, with a warning", "[playback][midi]")
+{
+    requireExported("melody.setup.json");
+    const MusicData music = loadMusicData(exported / "melody.music.json");
+    PlaybackSetup setup = loadPlaybackSetup(exported / "melody.setup.json");
+    REQUIRE(music.tracks.size() == 1);
+    setup.trackProfiles.at(music.tracks[0].id).outputs.clear();
+
+    const Playback playback = play(music, setup);
+    CHECK_FALSE(playback.events.empty()); // the events are still made
+    CHECK(playback.tracks.empty());
+    CHECK(std::find(playback.warnings.begin(), playback.warnings.end(),
+                    "track " + music.tracks[0].id + ": no outputs, skipped")
+          != playback.warnings.end());
+    // MThd, then the conductor track alone: format 1, one track.
+    REQUIRE(playback.file.size() > 14);
+    CHECK(playback.file[10] == 0);
+    CHECK(playback.file[11] == 1);
 }

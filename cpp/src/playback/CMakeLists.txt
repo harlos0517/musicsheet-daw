@@ -14,6 +14,8 @@ add_library(msd_playback STATIC
     JsMath.h
     MidiFile.cpp
     MidiFile.h
+    Play.cpp
+    Play.h
     RenderMidi.cpp
     RenderMidi.h
     Repeats.cpp
