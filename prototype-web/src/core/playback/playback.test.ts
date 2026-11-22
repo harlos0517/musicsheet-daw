@@ -174,6 +174,30 @@ describe('note events', () => {
     expect(leftHand.every(n => n.durationTicks === 2880)).toBe(true)
   })
 
+  it('places a grace note where the profile says', () => {
+    const onBeat: PlaybackSetup = {
+      ...setups.piano,
+      interpretationProfiles: setups.piano.interpretationProfiles.map(profile =>
+        profile.id === 'piano'
+          ? {
+            ...profile,
+            graceNotes: {
+              appoggiatura: { ratio: 0.5 },
+              acciaccatura: { ratio: 0.25, placement: 'on-beat' },
+            },
+          }
+          : profile),
+    }
+    const rightHand = notesOf(play(piano(), onBeat).events)
+      .filter(n => n.staffId === 'pno-rh' && n.voiceIndex === 0)
+    const grace = rightHand.find(n => n.pitch === 79)!
+    expect(grace).toMatchObject({ startTick: 2880, durationTicks: 120 })
+    // On the beat, it takes its time out of the main note instead of the note before.
+    const main = rightHand.find(n => n.pitch === 77)
+    expect(main).toMatchObject({ startTick: 3000, durationTicks: 840 })
+    expect(rightHand.find(n => n.startTick === 1920)!.durationTicks).toBe(960)
+  })
+
   it('reads velocity from the dynamics curve', () => {
     const first = notesOf(events)[0]!
     expect(first.velocity).toBeCloseTo(0.45) // mp

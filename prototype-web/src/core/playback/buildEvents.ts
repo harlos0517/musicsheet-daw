@@ -535,10 +535,9 @@ const buildNotes = (
       const graces = chord.graceNotes
       const slash = graces?.slash === true
       const graceNotes = profile.graceNotes ?? DEFAULT_GRACE_NOTES
-      const graceSetup = slash
-        ? { placement: 'before' as const, ...graceNotes.acciaccatura }
-        : { placement: 'after' as const, ...graceNotes.appoggiatura }
-      const onBeat = graceSetup.placement === 'after'
+      const graceSetup = slash ? graceNotes.acciaccatura : graceNotes.appoggiatura
+      const placement = graceSetup.placement ?? (slash ? 'before-beat' : 'on-beat')
+      const onBeat = placement === 'on-beat'
       let graceLengths = (graces?.chords ?? [])
         .map(graceChord => durationTicks(graceChord.duration, tpq) * graceSetup.ratio)
       let graceTotal = graceLengths.reduce((sum, length) => sum + length, 0)
