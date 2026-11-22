@@ -4,9 +4,12 @@ add_library(msd_core STATIC
     json/EnumNames.h
     json/Load.cpp
     json/Load.h
+    json/Save.cpp
+    json/Save.h
     types/LayoutProfile.h
     types/LayoutSetup.h
-    types/MusicData.h)
+    types/MusicData.h
+    types/PluginRack.h)
 
 # Includes are written from src/, e.g. #include "core/types/MusicData.h".
 target_include_directories(msd_core PUBLIC ${PROJECT_SOURCE_DIR}/src)

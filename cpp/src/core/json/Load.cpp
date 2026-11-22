@@ -137,6 +137,9 @@ void read(const Json&, const Path&, StaffMeasure&);
 void read(const Json&, const Path&, Slur&);
 void read(const Json&, const Path&, Hairpin&);
 void read(const Json&, const Path&, Ottava&);
+void read(const Json&, const Path&, PluginSlot&);
+void read(const Json&, const Path&, PluginInstance&);
+void read(const Json&, const Path&, PluginRack&);
 void read(const Json&, const Path&, Pedal&);
 void read(const Json&, const Path&, CustomSpanner&);
 void read(const Json&, const Path&, TrackSpanner&);
@@ -1580,6 +1583,33 @@ void read(const Json& j, const Path& p, TrackOutput& out)
     field(j, p, "sounds", out.sounds);
 }
 
+void read(const Json& j, const Path& p, PluginSlot& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "name", out.name);
+    field(j, p, "channel", out.channel);
+    if (out.channel < 1 || out.channel > 16)
+        fail(at(p, "channel"), "must be 1-16, got " + std::to_string(out.channel));
+    field(j, p, "instrumentNames", out.instrumentNames);
+    field(j, p, "outputIds", out.outputIds);
+}
+
+void read(const Json& j, const Path& p, PluginInstance& out)
+{
+    expectObject(j, p);
+    field(j, p, "id", out.id);
+    field(j, p, "name", out.name);
+    field(j, p, "pluginFile", out.pluginFile);
+    field(j, p, "slots", out.slots);
+}
+
+void read(const Json& j, const Path& p, PluginRack& out)
+{
+    expectObject(j, p);
+    field(j, p, "plugins", out.plugins);
+}
+
 void read(const Json& j, const Path& p, TrackPlayback& out)
 {
     expectObject(j, p);
@@ -1667,6 +1697,10 @@ PlaybackSetup loadPlaybackSetup(const std::filesystem::path& file)
 {
     return readRootFrom<PlaybackSetup>(parseFile(file), file);
 }
+
+PluginRack parsePluginRack(std::string_view json) { return readRoot<PluginRack>(parseText(json)); }
+
+PluginRack loadPluginRack(const std::filesystem::path& file) { return readRootFrom<PluginRack>(parseFile(file), file); }
 
 std::vector<MusicEvent> parseMusicEvents(std::string_view json)
 {

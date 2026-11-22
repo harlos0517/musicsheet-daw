@@ -16,6 +16,8 @@ add_library(msd_playback STATIC
     MidiFile.h
     Play.cpp
     Play.h
+    Rack.cpp
+    Rack.h
     RenderMidi.cpp
     RenderMidi.h
     Repeats.cpp

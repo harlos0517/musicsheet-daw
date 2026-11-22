@@ -18,6 +18,7 @@
 #include "core/types/MusicData.h"
 #include "core/types/MusicEvent.h"
 #include "core/types/PlaybackSetup.h"
+#include "core/types/PluginRack.h"
 
 namespace msd
 {
@@ -37,6 +38,10 @@ LayoutSetup loadLayoutSetup(const std::filesystem::path& file);
 
 PlaybackSetup parsePlaybackSetup(std::string_view json);
 PlaybackSetup loadPlaybackSetup(const std::filesystem::path& file);
+
+// The app's plugin template (rack.json). Written by savePluginRack (Save.h).
+PluginRack parsePluginRack(std::string_view json);
+PluginRack loadPluginRack(const std::filesystem::path& file);
 
 // A JSON array of note and curve events, as in *.events.json.
 std::vector<MusicEvent> parseMusicEvents(std::string_view json);
