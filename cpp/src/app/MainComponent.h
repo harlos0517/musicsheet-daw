@@ -9,10 +9,16 @@
     #include <melatonin_inspector/melatonin_inspector.h>
 #endif
 
+#include <map>
+
+#include "AudioHost.h"
 #include "MusicFont.h"
+#include "RackComponent.h"
 #include "ScoreView.h"
 #include "core/types/LayoutSetup.h"
 #include "core/types/MusicData.h"
+#include "core/types/PlaybackSetup.h"
+#include "core/types/PluginRack.h"
 #include "edit/EditHistory.h"
 #include "edit/PitchEdit.h"
 #include "edit/Selection.h"
@@ -20,8 +26,9 @@
 namespace msd
 {
 
-// The window's content: a toolbar to open a score, reflow it and export it as MIDI, and
-// its pages below, where notes can be selected and moved.
+// The window's content: a toolbar to open a score, reflow it and export it as MIDI; a
+// second one for audio and the plugin rack; and the pages below, where notes can be
+// selected and moved.
 class MainComponent final : public juce::Component
 {
 public:
@@ -46,6 +53,12 @@ private:
     void edited(const juce::String& what, const std::vector<NodeId>& measures);
     void chooseMidiFile();
     void exportMidi(const juce::File& file);
+    void showAudioSettings();
+    void showRack();
+    void loadRack();               // rack.json and each plugin's state, at the start
+    void saveRack(bool withStates); // rack.json; with the plugins' states too
+    void openPluginWindow(const juce::String& pluginId);
+    void closePluginWindow(const juce::String& pluginId);
     void setStatus(const juce::String& text);
     const LayoutProfile& profile() const; // the layout's, or the first one
 
@@ -57,6 +70,7 @@ private:
     std::unique_ptr<MusicFont> font;
     LayoutSetup setup; // the default profile and the full-score layout, with its flow
     std::optional<MusicData> music;
+    std::optional<PlaybackSetup> playbackSetup; // the score's <name>.setup.json, if there is one
     juce::File scoreFile;
     Selection selection;
     EditHistory history;
@@ -69,6 +83,8 @@ private:
     juce::Label zoomLabel { {}, "Zoom" };
     juce::Slider zoomSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::ToggleButton boundsToggle { "Boxes" };
+    juce::TextButton audioButton { "Audio..." };
+    juce::TextButton rackButton { "Rack..." };
     juce::Label statusLabel;
     juce::String status; // shown when nothing is hovered
 
@@ -76,6 +92,15 @@ private:
     juce::Viewport viewport;
 
     std::unique_ptr<juce::FileChooser> chooser;
+
+    // The windows showing plugins' editors are declared after the audio host, so they go
+    // before their plugins do.
+    PluginRack rack;
+    AudioHost audio;
+    std::map<juce::String, std::unique_ptr<juce::DocumentWindow>> pluginWindows;
+    std::unique_ptr<juce::DocumentWindow> rackWindow;
+    RackComponent* rackComponent = nullptr; // inside rackWindow
+    juce::TimedCallback saveRackSoon { [this] { saveRack(false); } };
 
 #if MSD_ENABLE_INSPECTOR
     std::unique_ptr<melatonin::Inspector> inspector;

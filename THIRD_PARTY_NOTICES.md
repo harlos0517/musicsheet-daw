@@ -11,17 +11,24 @@ result next to the app as `THIRD_PARTY_NOTICES.txt`.
 
 | Component | Version | Copyright | License |
 |---|---|---|---|
-| JUCE (modules juce_core, juce_events, juce_data_structures, juce_graphics, juce_gui_basics) | 8.0.15 | Raw Material Software Limited | AGPLv3 (JUCE is dual-licensed; used here under the AGPLv3) |
+| JUCE (modules juce_core, juce_events, juce_data_structures, juce_graphics, juce_gui_basics, juce_gui_extra, juce_audio_basics, juce_audio_devices, juce_audio_formats, juce_audio_processors, juce_audio_processors_headless, juce_audio_utils) | 8.0.15 | Raw Material Software Limited | AGPLv3 (JUCE is dual-licensed; used here under the AGPLv3) |
 | zlib, inside JUCE | 1.3.1 | Jean-loup Gailly and Mark Adler | zlib License |
 | libpng, inside JUCE | 1.6.37 | The PNG Reference Library Authors, Cosmin Truta, Glenn Randers-Pehrson, Andreas Dilger, Guy Eric Schalnat | libpng License |
 | IJG JPEG library, inside JUCE | 9f | Thomas G. Lane, Guido Vollbeding | IJG License |
 | HarfBuzz, inside JUCE | 10.1.0 | Google, Inc., Ebrahim Byagowi, Facebook, Inc., Mozilla Foundation and others | "Old MIT" License |
+| VST3 SDK, inside JUCE (for hosting VST3 plugins) | 3.8.0 | Steinberg Media Technologies GmbH | MIT License |
+| ASIO SDK headers, inside JUCE (for ASIO audio devices) | as bundled with JUCE 8.0.15 | Steinberg Media Technologies GmbH | GPLv3 (the SDK is dual-licensed: Steinberg ASIO License or GPLv3; used here under the GPLv3) |
 | SheenBidi, inside JUCE | as bundled with JUCE 8.0.15 | Muhammad Tayyab Akram | Apache License 2.0 |
 | nlohmann/json | 3.12.0 | Niels Lohmann | MIT License |
 | Leland music font | 0.80 | MuseScore BVBA, Reserved Font Name "Leland" | SIL Open Font License 1.1 |
 | SMuFL `glyphnames.json` | 1.4 | the Contributors to the Standard Music Font Layout Specification | W3C Community Final Specification Agreement |
 
 This software is based in part on the work of the Independent JPEG Group.
+
+VST and ASIO are registered trademarks of Steinberg Media Technologies GmbH.
+
+juce_audio_formats is built without its FLAC and Ogg Vorbis codecs, so those are not
+in the app. The GPLv3 is at https://www.gnu.org/licenses/gpl-3.0.html.
 
 The SMuFL notice, as published with the specification: Copyright © 2021 the
 Contributors to the Standard Music Font Layout Specification, published by the W3C

@@ -12,6 +12,10 @@ juce_add_binary_data(MsdAppData
         ${PROJECT_SOURCE_DIR}/resources/default.layout.json)
 
 target_sources(MusicsheetDawApp PRIVATE
+    AudioHost.cpp
+    AudioHost.h
+    RackComponent.cpp
+    RackComponent.h
     Main.cpp
     MainComponent.cpp
     MainComponent.h
@@ -23,6 +27,13 @@ target_sources(MusicsheetDawApp PRIVATE
 target_compile_definitions(MusicsheetDawApp PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    # Hosting VST3 plugins only (JUCE's VST3 SDK copy is MIT). No audio file codecs:
+    # FLAC and Ogg Vorbis would otherwise come in with juce_audio_formats.
+    JUCE_PLUGINHOST_VST3=1
+    # ASIO devices, with the ASIO SDK headers inside JUCE, used under their GPLv3 option.
+    JUCE_ASIO=1
+    JUCE_USE_FLAC=0
+    JUCE_USE_OGGVORBIS=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:MusicsheetDawApp,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:MusicsheetDawApp,JUCE_VERSION>"
     MSD_ENABLE_INSPECTOR=$<BOOL:${MSD_ENABLE_INSPECTOR}>
@@ -35,6 +46,9 @@ target_link_libraries(MusicsheetDawApp
         msd_layout
         msd_playback
         msd_edit
+        juce::juce_audio_utils
+        juce::juce_audio_processors
+        juce::juce_audio_devices
         juce::juce_gui_basics
         juce::juce_graphics
         juce::juce_core

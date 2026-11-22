@@ -77,8 +77,8 @@ cpp/
 │   ├── core/                       library msd_core: no JUCE, testable without a window
 │   │   ├── types/                  MusicData.h, LayoutProfile.h, LayoutSetup.h, and for playback
 │   │   │                           PlaybackSetup.h, InterpretationProfile.h, InstrumentProfile.h,
-│   │   │                           MusicEvent.h, EventOverride.h
-│   │   └── json/                   Load.h/.cpp (JSON → types), EnumNames.h
+│   │   │                           MusicEvent.h, EventOverride.h; PluginRack.h (app only)
+│   │   └── json/                   Load.h/.cpp (JSON → types), Save.h (rack.json), EnumNames.h
 │   ├── layout/                     library msd_layout: MusicData → boxes, no JUCE either
 │   │   ├── PageLayout.h            reflow() → Layout.flow, layoutPages()
 │   │   ├── SystemLayout.h          one system: spacing, notes, beams, barlines
@@ -95,12 +95,15 @@ cpp/
 │   │   │                           BuildCurves.h, BuildNotes.h and Swells.h in that order
 │   │   ├── Curves.h, Interpretation.h   curve values and shapes; profiles' `extends`
 │   │   ├── RenderMidi.h            events → MIDI messages in ms, per output (renderTracks)
+│   │   ├── Rack.h                  which plugin slot each output plays on; adding slots
 │   │   └── MidiFile.h              messages → a Standard MIDI File (writeMidiFile)
 │   ├── edit/                       library msd_edit: changes to MusicData, with undo, no JUCE
 │   │   ├── PitchEdit.h             movePitches(): semitone, step in the key, octave
 │   │   ├── EditHistory.h           undo and redo
 │   │   └── NoteIndex.h, Selection.h
-│   └── app/                        the JUCE window: MainComponent, ScoreView, MusicFont
+│   └── app/                        the JUCE window: MainComponent, ScoreView, MusicFont;
+│                                   AudioHost (the device and the rack's plugins),
+│                                   RackComponent (the Rack window)
 └── tests/                          Catch2 unit tests (msd_tests)
 ```
 
@@ -211,6 +214,32 @@ next to it, and writes a `.mid` (by default `<name>.edited.mid`, so that the `.m
 `pnpm midi` wrote and the tests compare with stays). Edits are not saved: closing
 the app loses them.
 
+## Audio and the rack
+
+**Audio...** picks the output device, sample rate and buffer size (ASIO, WASAPI or
+DirectSound). The choice is saved in `%APPDATA%\Musicsheet DAW\Musicsheet DAW.settings`.
+
+**Rack...** edits the plugins scores play on, one template shared by every score
+(`src/core/types/PluginRack.h`), like a DAW template:
+
+- a **plugin** is one loaded VST3, typically a Kontakt with several patches, one per
+  MIDI channel. **Add plugin...** lists the `.vst3` files in the system's VST3 folders
+  and opens the new plugin's window, where the patches are loaded;
+- a **slot** is one channel of it, and plays the score tracks whose instrument name
+  (any case) is in its list; with output IDs, only those outputs of such a track
+  (a kit split over several patches). A profile's channel 1 goes to the slot's
+  channel, its channel 2 to the next, and so on;
+- **This score** lists each output of the open score and the slot it goes to;
+  **Add slots for this score** adds a slot for each one without, on the plugin that
+  already plays its library (the profile ID up to the first `-`), else the selected
+  plugin, and says which patch to load on which channel;
+- **Test note**, held down, plays middle C with CC1 at 90 on the selected slot.
+
+The rack is saved to `%APPDATA%\Musicsheet DAW\rack.json` a second after each change;
+each plugin's state (for Kontakt, its patches) to `rack\<id>.state` beside it when
+the app closes or on **Save now**. At the start every plugin is loaded again with its
+state. Playing the score through the rack comes next.
+
 ## Licensing
 
 The project is licensed under the AGPLv3 or later (`/LICENSE`). JUCE is used
@@ -223,3 +252,9 @@ exe. When a dependency is added or updated, update that file's table, and add it
 license file to the list in `cmake/Notices.cmake` (a missing file stops the
 configure). Linking another JUCE module can bring its own bundled libraries: see
 JUCE's `LICENSE.md` for which.
+
+VST3 hosting uses the VST3 SDK inside JUCE (MIT). `juce_audio_formats` comes with
+`juce_audio_utils`; it is built with `JUCE_USE_FLAC=0` and `JUCE_USE_OGGVORBIS=0`, so
+those codecs stay out. ASIO (`JUCE_ASIO=1`) uses the ASIO SDK headers inside JUCE,
+dual-licensed by Steinberg, here under the GPLv3, which an AGPLv3 program may
+combine with.

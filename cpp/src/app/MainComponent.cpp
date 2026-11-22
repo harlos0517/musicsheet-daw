@@ -7,6 +7,7 @@
 
 #include "BinaryData.h"
 #include "core/json/Load.h"
+#include "core/json/Save.h"
 #include "layout/PageLayout.h"
 #include "playback/Play.h"
 
@@ -32,6 +33,26 @@ LayoutSetup defaultSetup()
 
 double millisecondsSince(double start) { return juce::Time::getMillisecondCounterHiRes() - start; }
 
+// A plugin's own editor in a window of its own; closing it only hides it.
+class PluginWindow final : public juce::DocumentWindow
+{
+public:
+    explicit PluginWindow(juce::AudioProcessor& plugin)
+        : DocumentWindow(plugin.getName(), juce::Colours::darkgrey, DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        juce::AudioProcessorEditor* editor = plugin.hasEditor() ? plugin.createEditorAndMakeActive() : nullptr;
+        if (editor == nullptr)
+            editor = new juce::GenericAudioProcessorEditor(plugin);
+        setContentOwned(editor, true);
+        setResizable(editor->isResizable(), false);
+        centreWithSize(getWidth(), getHeight());
+        setVisible(true);
+    }
+
+    void closeButtonPressed() override { setVisible(false); }
+};
+
 } // namespace
 
 MainComponent::MainComponent(const juce::String& scoreToOpen)
@@ -51,6 +72,10 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     };
     exportButton.setTooltip("Play the score as it is now and write a MIDI file");
     exportButton.onClick = [this] { chooseMidiFile(); };
+    audioButton.setTooltip("Output device, sample rate and buffer size");
+    audioButton.onClick = [this] { showAudioSettings(); };
+    rackButton.setTooltip("The plugins scores play on, shared by every score");
+    rackButton.onClick = [this] { showRack(); };
     zoomSlider.setRange(2, 30, 0.5);
     zoomSlider.setValue(6, juce::dontSendNotification);
     zoomSlider.onValueChange = [this] { scoreView.setZoom(static_cast<float>(zoomSlider.getValue())); };
@@ -65,12 +90,13 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     viewport.setWantsKeyboardFocus(false);
     viewport.setScrollBarsShown(true, true);
 
-    for (juce::Component* c :
-         std::initializer_list<juce::Component*> { &openButton, &fileLabel, &reflowButton, &exportButton, &zoomLabel,
-                                                   &zoomSlider, &boundsToggle, &statusLabel, &viewport })
+    for (juce::Component* c : std::initializer_list<juce::Component*> {
+             &openButton, &fileLabel, &reflowButton, &exportButton, &zoomLabel, &zoomSlider, &boundsToggle,
+             &audioButton, &rackButton, &statusLabel, &viewport })
         addAndMakeVisible(c);
 
     setSize(1000, 800);
+    loadRack();
 
     // Command line: [score.music.json] [page to show]. Without a score, in development,
     // an exported example.
@@ -91,7 +117,14 @@ MainComponent::MainComponent(const juce::String& scoreToOpen)
     }
 }
 
-MainComponent::~MainComponent() = default;
+MainComponent::~MainComponent()
+{
+    saveRack(true);
+    // The windows that show plugins' editors go before the plugins.
+    rackComponent = nullptr;
+    rackWindow.reset();
+    pluginWindows.clear();
+}
 
 void MainComponent::paint(juce::Graphics& g)
 {
@@ -115,6 +148,14 @@ void MainComponent::resized()
         item(boundsToggle, 72),
     };
     toolbar.performLayout(area.removeFromTop(40));
+
+    juce::FlexBox audioBar;
+    audioBar.alignItems = juce::FlexBox::AlignItems::center;
+    audioBar.items = {
+        item(audioButton, 80),
+        item(rackButton, 80),
+    };
+    audioBar.performLayout(area.removeFromTop(34));
 
     statusLabel.setBounds(area.removeFromBottom(26).reduced(8, 0));
     viewport.setBounds(area);
@@ -193,12 +234,32 @@ void MainComponent::openScore(const juce::File& file)
     catch (const std::exception& e)
     {
         music.reset();
+        playbackSetup.reset();
+        if (rackComponent != nullptr)
+            rackComponent->setScore(nullptr, nullptr);
         scoreView.clear();
         setStatus(juce::String::fromUTF8(e.what()));
         return;
     }
     fileLabel.setText(file.getFileName(), juce::dontSendNotification);
     scoreFile = file;
+
+    // The playback setup pnpm midi wrote next to it: which outputs each track has.
+    const juce::String name = file.getFileName().upToLastOccurrenceOf(".music.json", false, true);
+    playbackSetup.reset();
+    if (const juce::File setupFile = file.getSiblingFile(name + ".setup.json"); setupFile.existsAsFile())
+    {
+        try
+        {
+            playbackSetup = loadPlaybackSetup(setupFile.getFullPathName().toStdString());
+        }
+        catch (const std::exception&)
+        {
+            // Export MIDI reports it.
+        }
+    }
+    if (rackComponent != nullptr)
+        rackComponent->setScore(&*music, playbackSetup ? &*playbackSetup : nullptr);
     history.clear();
     selection.notes.clear();
     scoreView.setSelected({});
@@ -423,5 +484,149 @@ void MainComponent::exportMidi(const juce::File& file)
         setStatus(juce::String::fromUTF8(e.what()));
     }
 }
+
+void MainComponent::showAudioSettings()
+{
+    // Output only: no inputs, no MIDI devices yet. AudioHost saves what is picked.
+    auto selector =
+        std::make_unique<juce::AudioDeviceSelectorComponent>(audio.devices(), 0, 0, 2, 2, false, false, true, false);
+    selector->setSize(500, 360);
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(selector.release());
+    options.dialogTitle = "Audio settings";
+    options.useNativeTitleBar = true;
+    options.resizable = false;
+    options.componentToCentreAround = this;
+    options.launchAsync();
+}
+
+namespace
+{
+
+juce::File appFolder()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("Musicsheet DAW");
+}
+
+juce::File rackFile() { return appFolder().getChildFile("rack.json"); }
+juce::File stateFile(const juce::String& pluginId)
+{
+    return appFolder().getChildFile("rack").getChildFile(pluginId + ".state");
+}
+
+// The rack's own window; closing it only hides it.
+class RackWindow final : public juce::DocumentWindow
+{
+public:
+    explicit RackWindow(std::unique_ptr<RackComponent> content)
+        : DocumentWindow("Rack", juce::Colours::darkgrey, DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(content.release(), true);
+        setResizable(true, false);
+        centreWithSize(getWidth(), getHeight());
+    }
+
+    void closeButtonPressed() override { setVisible(false); }
+};
+
+} // namespace
+
+void MainComponent::loadRack()
+{
+    if (rackFile().existsAsFile())
+    {
+        try
+        {
+            rack = loadPluginRack(rackFile().getFullPathName().toStdString());
+        }
+        catch (const std::exception& e)
+        {
+            setStatus("The rack could not be read, so it starts empty: " + juce::String::fromUTF8(e.what()));
+            rack = {};
+        }
+    }
+
+    auto content = std::make_unique<RackComponent>(rack, audio);
+    rackComponent = content.get();
+    rackComponent->openPluginWindow = [this](const juce::String& id) { openPluginWindow(id); };
+    rackComponent->closePluginWindow = [this](const juce::String& id) { closePluginWindow(id); };
+    rackComponent->changed = [this] { saveRackSoon.startTimer(1000); };
+    rackComponent->saveStates = [this] { saveRack(true); };
+    rackWindow = std::make_unique<RackWindow>(std::move(content));
+
+    // Each plugin as it was saved, patches and all. Kontakt then loads its samples in
+    // the background.
+    for (const PluginInstance& plugin : rack.plugins)
+    {
+        const juce::String id = juce::String::fromUTF8(plugin.id.c_str());
+        juce::MemoryBlock state;
+        stateFile(id).loadFileAsData(state);
+        rackComponent->pluginLoading(id);
+        audio.loadPlugin(id, juce::String::fromUTF8(plugin.pluginFile.c_str()), state,
+                         [this, id](const juce::String& error) {
+                             if (rackComponent != nullptr)
+                                 rackComponent->pluginLoaded(id, error);
+                         });
+    }
+}
+
+void MainComponent::saveRack(bool withStates)
+{
+    saveRackSoon.stopTimer();
+    try
+    {
+        appFolder().createDirectory();
+        savePluginRack(rack, rackFile().getFullPathName().toStdString());
+    }
+    catch (const std::exception& e)
+    {
+        setStatus("The rack could not be saved: " + juce::String::fromUTF8(e.what()));
+        return;
+    }
+    if (!withStates)
+        return;
+
+    // A plugin that didn't load keeps the state it had.
+    const juce::File folder = stateFile("x").getParentDirectory();
+    folder.createDirectory();
+    juce::StringArray kept;
+    for (const PluginInstance& plugin : rack.plugins)
+    {
+        const juce::String id = juce::String::fromUTF8(plugin.id.c_str());
+        kept.add(stateFile(id).getFileName());
+        if (audio.plugin(id) == nullptr)
+            continue;
+        const juce::MemoryBlock state = audio.pluginState(id);
+        if (!stateFile(id).replaceWithData(state.getData(), state.getSize()))
+            setStatus("Could not write " + stateFile(id).getFullPathName());
+    }
+    // The states of removed plugins.
+    for (const juce::File& file : folder.findChildFiles(juce::File::findFiles, false, "*.state"))
+        if (!kept.contains(file.getFileName()))
+            file.deleteFile();
+}
+
+void MainComponent::showRack()
+{
+    if (rackWindow == nullptr)
+        return;
+    rackWindow->setVisible(true);
+    rackWindow->toFront(true);
+}
+
+void MainComponent::openPluginWindow(const juce::String& id)
+{
+    juce::AudioPluginInstance* plugin = audio.plugin(id);
+    if (plugin == nullptr)
+        return;
+    std::unique_ptr<juce::DocumentWindow>& window = pluginWindows[id];
+    if (window == nullptr)
+        window = std::make_unique<PluginWindow>(*plugin);
+    window->setVisible(true);
+    window->toFront(true);
+}
+
+void MainComponent::closePluginWindow(const juce::String& id) { pluginWindows.erase(id); }
 
 } // namespace msd

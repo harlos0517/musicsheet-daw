@@ -15,6 +15,8 @@ set(_licenses
     "IJG JPEG library|${_juce_modules}/juce_graphics/image_formats/jpglib/README"
     "HarfBuzz|${_juce_modules}/juce_graphics/fonts/harfbuzz/COPYING"
     "SheenBidi|${_juce_modules}/juce_graphics/unicode/sheenbidi/LICENSE"
+    "ASIO SDK headers|${_juce_modules}/juce_audio_devices/native/asio/LICENSE.txt"
+    "VST3 SDK|${_juce_modules}/juce_audio_processors_headless/format_types/VST3_SDK/LICENSE.txt"
     "nlohmann/json|${nlohmann_json_SOURCE_DIR}/LICENSE.MIT"
     "Leland|${LELAND_DIR}/LICENSE.txt"
     "SMuFL|${SMUFL_DIR}/markdown/preamble/license.md")
