@@ -12,6 +12,8 @@ add_library(msd_playback STATIC
     Interpretation.cpp
     Interpretation.h
     JsMath.h
+    RenderMidi.cpp
+    RenderMidi.h
     Repeats.cpp
     Repeats.h
     ScoreIndex.cpp

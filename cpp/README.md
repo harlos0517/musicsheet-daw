@@ -92,7 +92,8 @@ cpp/
 │   │   ├── Tempo.h                 the tempo map: played ticks ↔ ms
 │   │   ├── BuildEvents.h           buildMusicEvents(): score + setup → MusicEvents, per track
 │   │   │                           BuildCurves.h, BuildNotes.h and Swells.h in that order
-│   │   └── Curves.h, Interpretation.h   curve values and shapes; profiles' `extends`
+│   │   ├── Curves.h, Interpretation.h   curve values and shapes; profiles' `extends`
+│   │   └── RenderMidi.h            events → MIDI messages in ms, per output (renderTracks)
 │   └── app/                        the JUCE window: MainComponent, ScoreView, MusicFont
 └── tests/                          Catch2 unit tests (msd_tests)
 ```
@@ -120,9 +121,10 @@ cpp\build\debug\tests\msd_tests.exe "[exported]"
 ```
 
 The same tag also lays out the first system of every staff, reflows every score
-onto pages, and checks that playback in C++ gives the events and timing the TS
-wrote (velocities may differ by 1e-12: V8's `exp` and `pow` round a few results
-differently). Debug takes about 4 minutes, most of it the big imported scores.
+onto pages, and checks that playback in C++ gives the timing, events and MIDI
+messages the TS wrote (event velocities may differ by 1e-12: V8's `exp` and `pow`
+round a few results differently). Debug takes about 6 minutes, most of it the big
+imported scores.
 
 ## Layout (the engraving kind)
 
