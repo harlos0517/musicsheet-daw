@@ -3,6 +3,10 @@
 add_library(msd_playback STATIC
     BuildCurves.cpp
     BuildCurves.h
+    BuildEvents.cpp
+    BuildEvents.h
+    BuildNotes.cpp
+    BuildNotes.h
     Curves.cpp
     Curves.h
     Interpretation.cpp
@@ -12,6 +16,8 @@ add_library(msd_playback STATIC
     Repeats.h
     ScoreIndex.cpp
     ScoreIndex.h
+    Swells.cpp
+    Swells.h
     Tempo.cpp
     Tempo.h
     Timeline.cpp

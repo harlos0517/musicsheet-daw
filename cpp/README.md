@@ -89,7 +89,10 @@ cpp/
 │   │   ├── Timeline.h              measures and voice events in written time
 │   │   ├── Repeats.h               the order measures are played in
 │   │   ├── ScoreIndex.h            every event by ID; anchors → positions
-│   │   └── Tempo.h                 the tempo map: played ticks ↔ ms
+│   │   ├── Tempo.h                 the tempo map: played ticks ↔ ms
+│   │   ├── BuildEvents.h           buildMusicEvents(): score + setup → MusicEvents, per track
+│   │   │                           BuildCurves.h, BuildNotes.h and Swells.h in that order
+│   │   └── Curves.h, Interpretation.h   curve values and shapes; profiles' `extends`
 │   └── app/                        the JUCE window: MainComponent, ScoreView, MusicFont
 └── tests/                          Catch2 unit tests (msd_tests)
 ```
@@ -116,8 +119,10 @@ and the events playback made from them (`*.events.json`). To check they all load
 cpp\build\debug\tests\msd_tests.exe "[exported]"
 ```
 
-The same tag also lays out the first system of every staff, and reflows every
-score onto pages. In Release all of it takes about 6 s; Debug is much slower.
+The same tag also lays out the first system of every staff, reflows every score
+onto pages, and checks that playback in C++ gives the events and timing the TS
+wrote (velocities may differ by 1e-12: V8's `exp` and `pow` round a few results
+differently). Debug takes about 4 minutes, most of it the big imported scores.
 
 ## Layout (the engraving kind)
 
