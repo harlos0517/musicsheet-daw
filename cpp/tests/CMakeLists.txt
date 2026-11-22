@@ -4,7 +4,8 @@ add_executable(msd_tests
     LoadTests.cpp
     NoteTests.cpp
     PageTests.cpp
-    TimingTests.cpp)
+    TimingTests.cpp
+    CurveTests.cpp)
 
 target_link_libraries(msd_tests PRIVATE msd_core msd_layout msd_playback nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
 
