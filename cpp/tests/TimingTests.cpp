@@ -171,3 +171,23 @@ TEST_CASE("played order and tempo match every exported score", "[.][exported]")
     }
     CHECK(compared > 0);
 }
+
+TEST_CASE("a tempo cursor converts exactly as the tempo map does, in any order", "[playback][timing]")
+{
+    // Points at the same tick, a rit. in steps, and ticks before the first point.
+    const TempoMap tempo({ { 0, 120 }, { 960, 90 }, { 960, 60 }, { 1000, 61 }, { 1040, 62 }, { 5000, 140 } }, 480);
+    TempoMap::Cursor cursor(tempo);
+    std::vector<double> ticks;
+    for (double tick = -100; tick < 7000; tick += 7.25)
+        ticks.push_back(tick);
+    for (double tick = 7000; tick > -100; tick -= 333) // backwards too
+        ticks.push_back(tick);
+    for (const double tick : { 960.0, 1000.0, 0.0, 5000.0, 959.999 })
+        ticks.push_back(tick);
+    for (const double tick : ticks)
+    {
+        CHECK(cursor.tickToMs(tick) == tempo.tickToMs(tick));
+        const double ms = tempo.tickToMs(tick);
+        CHECK(cursor.msToTick(ms) == tempo.msToTick(ms));
+    }
+}

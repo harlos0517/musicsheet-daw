@@ -29,8 +29,34 @@ public:
     double tickToMs(double tick) const;
     double msToTick(double ms) const;
 
+    // The same conversions, for many values that mostly go up (ramp samples): each call
+    // looks for its tempo point from where the last one found its, instead of searching
+    // all of them. The results are the same, to the bit.
+    class Cursor
+    {
+    public:
+        explicit Cursor(const TempoMap& map)
+            : map_(map)
+        {}
+        double tickToMs(double tick);
+        double msToTick(double ms);
+
+    private:
+        const TempoMap& map_;
+        std::size_t point_ = 0; // for tickToMs
+        std::size_t start_ = 0; // for msToTick
+    };
+
 private:
     double msPerTick(double qpm) const { return 60000 / (qpm * tpq_); }
+    double msAt(std::size_t i, double tick) const
+    {
+        return starts_[i] + (tick - points_[i].tick) * msPerTick(points_[i].qpm);
+    }
+    double tickAt(std::size_t i, double ms) const
+    {
+        return points_[i].tick + (ms - starts_[i]) / msPerTick(points_[i].qpm);
+    }
 
     std::vector<TempoPoint> points_;
     std::vector<double> starts_; // the time each point starts at, in ms

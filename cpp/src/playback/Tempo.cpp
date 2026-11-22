@@ -45,14 +45,38 @@ double TempoMap::tickToMs(double tick) const
     const auto after = std::upper_bound(points_.begin(), points_.end(), tick,
                                         [](double t, const TempoPoint& point) { return t < point.tick; });
     const std::size_t i = after == points_.begin() ? 0 : static_cast<std::size_t>(after - points_.begin() - 1);
-    return starts_[i] + (tick - points_[i].tick) * msPerTick(points_[i].qpm);
+    return msAt(i, tick);
 }
 
 double TempoMap::msToTick(double ms) const
 {
     const auto after = std::upper_bound(starts_.begin(), starts_.end(), ms);
     const std::size_t i = after == starts_.begin() ? 0 : static_cast<std::size_t>(after - starts_.begin() - 1);
-    return points_[i].tick + (ms - starts_[i]) / msPerTick(points_[i].qpm);
+    return tickAt(i, ms);
+}
+
+// The same point as the binary searches above: the last at or before the value, or the
+// first. Ticks and starts never decrease, so walking there from anywhere finds it.
+double TempoMap::Cursor::tickToMs(double tick)
+{
+    const std::vector<TempoPoint>& points = map_.points_;
+    std::size_t& i = point_;
+    while (i + 1 < points.size() && points[i + 1].tick <= tick)
+        ++i;
+    while (i > 0 && points[i].tick > tick)
+        --i;
+    return map_.msAt(i, tick);
+}
+
+double TempoMap::Cursor::msToTick(double ms)
+{
+    const std::vector<double>& starts = map_.starts_;
+    std::size_t& i = start_;
+    while (i + 1 < starts.size() && starts[i + 1] <= ms)
+        ++i;
+    while (i > 0 && starts[i] > ms)
+        --i;
+    return map_.tickAt(i, ms);
 }
 
 TempoMap buildTempoMap(const MusicData& music, const std::vector<PlayedMeasure>& played, const ScoreIndex& index,
